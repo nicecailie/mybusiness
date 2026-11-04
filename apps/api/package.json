@@ -1,0 +1,10 @@
+{
+  "name": "@mybusiness/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "dev:lan": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts"
+  }
+}

@@ -1,0 +1,11 @@
+Options -Indexes -MultiViews
+DirectoryIndex disabled
+RewriteEngine On
+# Use a dedicated document root outside the main website; do not inherit its routing.
+RewriteOptions IgnoreInherit
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+# Passenger inserts its app registration settings separately.

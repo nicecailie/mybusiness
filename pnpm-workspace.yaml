@@ -1,0 +1,26 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  '@prisma/engines': true
+  '@scarf/scarf': false
+  esbuild: true
+  prisma: true
+minimumReleaseAgeExclude:
+  - '@better-auth/core@1.7.14'
+  - '@better-auth/drizzle-adapter@1.7.14'
+  - '@better-auth/expo@1.7.14'
+  - '@better-auth/kysely-adapter@1.7.14'
+  - '@better-auth/memory-adapter@1.7.14'
+  - '@better-auth/mongo-adapter@1.7.14'
+  - '@better-auth/prisma-adapter@1.7.14'
+  - '@better-auth/telemetry@1.7.14'
+  - '@nestjs/common@12.3.1'
+  - '@nestjs/core@12.3.1'
+  - '@nestjs/platform-express@12.3.1'
+  - '@nestjs/swagger@12.0.5'
+  - better-auth@1.7.14
+  - node-forge@1.4.1
+overrides:
+  node-forge: 1.4.1
+  '@expo/cli>zod': 4.6.7

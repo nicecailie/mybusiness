@@ -1,0 +1,16 @@
+/* Generated from tokens.json by pnpm tokens:generate. */
+:root {
+  --primary: #075e49;
+  --primary-hover: #064c3c;
+  --canvas: #f7f8f5;
+  --surface: #ffffff;
+  --text: #172b25;
+  --muted: #65736c;
+  --border: #e2e7e2;
+  --positive: #087b52;
+  --warning: #935b16;
+  --danger: #b13939;
+  --green: var(--primary);
+  --green-hover: var(--primary-hover);
+  --soft: #eef4ef;
+}

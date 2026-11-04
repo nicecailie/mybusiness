@@ -1,0 +1,41 @@
+name: MyBusiness checks
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-ephemeral-only
+          POSTGRES_DB: mybusiness
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      MIGRATION_DATABASE_URL: postgresql://postgres:ci-ephemeral-only@localhost:5432/mybusiness
+      DATABASE_URL: postgresql://mybusiness_app:ci-runtime-only@localhost:5432/mybusiness
+      BETTER_AUTH_SECRET: ci-only-secret-value-never-used-in-production-123456
+      BETTER_AUTH_URL: http://localhost:3000
+      WEB_ORIGIN: http://localhost:3000
+      ALLOW_DEMO_SEED: 'true'
+      DEMO_PASSWORD: ci-only-demo-password
+      DEMO_OWNER_EMAIL: owner@example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: PGPASSWORD=ci-ephemeral-only psql -h localhost -U postgres -d mybusiness -c "CREATE ROLE mybusiness_app LOGIN PASSWORD 'ci-runtime-only' NOSUPERUSER NOBYPASSRLS"
+      - run: pnpm db:generate && pnpm db:migrate && pnpm db:seed
+      - run: pnpm format:check && pnpm check && pnpm test:integration && pnpm build
+      - run: pnpm dev > /tmp/mybusiness-dev.log 2>&1 &
+      - run: pnpm exec tsx scripts/wait-ready.ts && pnpm test:http
+      - run: pnpm --filter @mybusiness/mobile exec expo export --platform ios --output-dir ../../.data/native-ci-export

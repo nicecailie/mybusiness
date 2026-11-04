@@ -1,0 +1,696 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id   String  @id @db.Uuid
+  name String
+  demo Boolean @default(false)
+
+  @@map("tenants")
+}
+
+model Business {
+  id                       String    @id @db.Uuid
+  tenantId                 String    @map("tenant_id") @db.Uuid
+  name                     String
+  currency                 String    @default("BIF")
+  timezone                 String    @default("Africa/Bujumbura")
+  locale                   String    @default("fr")
+  industryId               String?   @map("industry_id")
+  nif                      String    @default("")
+  tva                      String    @default("")
+  offlinePolicy            String    @default("warning_reason") @map("offline_policy")
+  contactName              String?   @map("contact_name")
+  country                  String    @default("BI")
+  phone                    String?
+  companySize              String?   @map("company_size")
+  primaryInterest          String?   @map("primary_interest")
+  legalAcceptedAt          DateTime? @map("legal_accepted_at") @db.Timestamptz
+  subscriptionAgreementUrl String?   @map("subscription_agreement_url")
+  privacyPolicyUrl         String?   @map("privacy_policy_url")
+
+  @@unique([tenantId, id])
+  @@map("businesses")
+}
+
+model Branch {
+  id         String @id @db.Uuid
+  tenantId   String @map("tenant_id") @db.Uuid
+  businessId String @map("business_id") @db.Uuid
+  name       String
+
+  @@unique([tenantId, businessId, id])
+  @@map("branches")
+}
+
+model Membership {
+  id         String  @id @db.Uuid
+  userId     String  @map("user_id")
+  tenantId   String  @map("tenant_id") @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  branchId   String  @map("branch_id") @db.Uuid
+  role       String
+  active     Boolean @default(true)
+
+  @@unique([userId, branchId])
+  @@map("memberships")
+}
+
+model Product {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  name       String
+  sku        String
+  barcode    String?
+  category   String
+  type       String   @default("goods")
+  price      Decimal  @db.Decimal(20, 0)
+  lowStock   Decimal  @default(5) @map("low_stock") @db.Decimal(18, 3)
+  archived   Boolean  @default(false)
+  demo       Boolean  @default(false)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, id])
+  @@unique([tenantId, businessId, sku])
+  @@unique([tenantId, businessId, barcode])
+  @@map("products")
+}
+
+model StockBalance {
+  id         String  @id @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  branchId   String  @map("branch_id") @db.Uuid
+  productId  String  @map("product_id") @db.Uuid
+  onHand     Decimal @default(0) @map("on_hand") @db.Decimal(18, 3)
+  value      Decimal @default(0) @db.Decimal(20, 0)
+
+  @@unique([tenantId, businessId, branchId, productId])
+  @@map("stock_balances")
+}
+
+model StockMovement {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  quantity   Decimal  @db.Decimal(18, 3)
+  value      Decimal  @db.Decimal(20, 0)
+  sourceType String   @map("source_type")
+  sourceId   String   @map("source_id") @db.Uuid
+  reason     String
+  actorId    String   @map("actor_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, businessId, branchId, createdAt])
+  @@map("stock_movements")
+}
+
+model Customer {
+  id         String  @id @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  name       String
+  phone      String
+  email      String
+  archived   Boolean @default(false)
+  demo       Boolean @default(false)
+
+  @@unique([tenantId, businessId, id])
+  @@map("customers")
+}
+
+model CashSession {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  businessId   String    @map("business_id") @db.Uuid
+  branchId     String    @map("branch_id") @db.Uuid
+  userId       String    @map("user_id")
+  status       String    @default("open")
+  openingFloat Decimal   @map("opening_float") @db.Decimal(20, 0)
+  counted      Decimal?  @db.Decimal(20, 0)
+  variance     Decimal?  @db.Decimal(20, 0)
+  reason       String?
+  openedAt     DateTime  @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt     DateTime? @map("closed_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("cash_sessions")
+}
+
+model Sale {
+  offline          Boolean  @default(false)
+  deviceId         String?  @map("device_id") @db.Uuid
+  syncedAt         DateTime @default(now()) @map("synced_at") @db.Timestamptz
+  valuationPending Boolean  @default(false) @map("valuation_pending")
+  id               String   @id @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  businessId       String   @map("business_id") @db.Uuid
+  branchId         String   @map("branch_id") @db.Uuid
+  number           String
+  actorId          String   @map("actor_id")
+  customerId       String?  @map("customer_id") @db.Uuid
+  customerName     String?  @map("customer_name")
+  cashSessionId    String   @map("cash_session_id") @db.Uuid
+  total            Decimal  @db.Decimal(20, 0)
+  tendered         Decimal  @db.Decimal(20, 0)
+  change           Decimal  @db.Decimal(20, 0)
+  cost             Decimal  @db.Decimal(20, 0)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, id])
+  @@unique([tenantId, businessId, number])
+  @@index([tenantId, businessId, branchId, createdAt])
+  @@map("sales")
+}
+
+model SaleLine {
+  discount   Decimal @default(0) @db.Decimal(20, 0)
+  id         String  @id @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  branchId   String  @map("branch_id") @db.Uuid
+  saleId     String  @map("sale_id") @db.Uuid
+  productId  String  @map("product_id") @db.Uuid
+  name       String
+  sku        String
+  quantity   Decimal @db.Decimal(18, 3)
+  unitPrice  Decimal @map("unit_price") @db.Decimal(20, 0)
+  total      Decimal @db.Decimal(20, 0)
+  cost       Decimal @db.Decimal(20, 0)
+
+  @@unique([tenantId, businessId, id])
+  @@map("sale_lines")
+}
+
+model Return {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  businessId    String   @map("business_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  saleId        String   @map("sale_id") @db.Uuid
+  cashSessionId String   @map("cash_session_id") @db.Uuid
+  total         Decimal  @db.Decimal(20, 0)
+  cost          Decimal  @db.Decimal(20, 0)
+  reason        String
+  actorId       String   @map("actor_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, id])
+  @@map("returns")
+}
+
+model ReturnLine {
+  id          String  @id @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  businessId  String  @map("business_id") @db.Uuid
+  branchId    String  @map("branch_id") @db.Uuid
+  returnId    String  @map("return_id") @db.Uuid
+  saleLineId  String  @map("sale_line_id") @db.Uuid
+  quantity    Decimal @db.Decimal(18, 3)
+  disposition String
+  total       Decimal @db.Decimal(20, 0)
+  cost        Decimal @db.Decimal(20, 0)
+
+  @@map("return_lines")
+}
+
+model Payment {
+  provider      String?
+  reference     String?
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  businessId    String   @map("business_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  saleId        String   @map("sale_id") @db.Uuid
+  returnId      String?  @map("return_id") @db.Uuid
+  cashSessionId String   @map("cash_session_id") @db.Uuid
+  amount        Decimal  @db.Decimal(20, 0)
+  method        String   @default("cash")
+  direction     String
+  status        String   @default("confirmed")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("payments")
+}
+
+model Journal {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  sourceType String   @map("source_type")
+  sourceId   String   @map("source_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, id])
+  @@unique([tenantId, businessId, sourceType, sourceId])
+  @@map("journals")
+}
+
+model JournalLine {
+  id         String  @id @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  branchId   String  @map("branch_id") @db.Uuid
+  journalId  String  @map("journal_id") @db.Uuid
+  account    String
+  debit      Decimal @db.Decimal(20, 0)
+  credit     Decimal @db.Decimal(20, 0)
+
+  @@map("journal_lines")
+}
+
+model Period {
+  id          String @id @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  businessId  String @map("business_id") @db.Uuid
+  throughDate String @map("through_date")
+
+  @@map("periods")
+}
+
+model AuditEvent {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  actorId    String   @map("actor_id")
+  action     String
+  entityId   String   @map("entity_id") @db.Uuid
+  reason     String
+  requestId  String   @map("request_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("audit_events")
+}
+
+model OutboxEvent {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  businessId  String    @map("business_id") @db.Uuid
+  branchId    String    @map("branch_id") @db.Uuid
+  type        String
+  entityId    String    @map("entity_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz
+
+  @@map("outbox_events")
+}
+
+model Idempotency {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  userId     String   @map("user_id")
+  operation  String
+  key        String
+  hash       String
+  result     Json
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, userId, operation, key])
+  @@map("idempotency")
+}
+
+model OfflineDevice {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  userId     String   @map("user_id")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("offline_devices")
+}
+
+model StockDiscrepancy {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  businessId    String   @map("business_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  saleId        String   @map("sale_id") @db.Uuid
+  opening       Decimal  @db.Decimal(18, 3)
+  shortage      Decimal  @db.Decimal(18, 3)
+  localEstimate Decimal  @map("local_estimate") @db.Decimal(18, 3)
+  status        String   @default("open")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("stock_discrepancies")
+}
+
+model ReconciliationEvent {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  businessId    String   @map("business_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  discrepancyId String   @map("discrepancy_id") @db.Uuid
+  actorId       String   @map("actor_id")
+  reason        String
+  action        String
+  referenceId   String?  @map("reference_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("reconciliation_events")
+}
+
+model BusinessDocument {
+  replacesId String?  @map("replaces_id") @db.Uuid
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  name       String
+  mime       String
+  data       String
+  actorId    String   @map("actor_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("business_documents")
+}
+
+model Room {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  name       String
+  rate       Decimal  @db.Decimal(20, 0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("rooms")
+}
+
+model Stay {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  roomId     String   @map("room_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  checkIn    String   @map("check_in")
+  checkOut   String   @map("check_out")
+  nights     Int
+  rate       Decimal  @db.Decimal(20, 0)
+  total      Decimal  @db.Decimal(20, 0)
+  actorId    String   @map("actor_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("stays")
+}
+
+model DiningTable {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  name       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("dining_tables")
+}
+
+model RestaurantOrder {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  tableId    String?  @map("table_id") @db.Uuid
+  saleId     String?  @map("sale_id") @db.Uuid
+  lines      Json
+  total      Decimal  @db.Decimal(20, 0)
+  status     String   @default("unpaid")
+  actorId    String   @map("actor_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("restaurant_orders")
+}
+
+model Supplier {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  businessId   String   @map("business_id") @db.Uuid
+  name         String
+  contact      String   @default("")
+  phone        String   @default("")
+  email        String   @default("")
+  address      String   @default("")
+  taxReference String   @default("") @map("tax_reference")
+  notes        String   @default("")
+  active       Boolean  @default(true)
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, id])
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  businessId   String   @map("business_id") @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  supplierId   String   @map("supplier_id") @db.Uuid
+  number       String
+  orderDate    String   @map("order_date")
+  expectedDate String?  @map("expected_date")
+  status       String   @default("draft")
+  notes        String   @default("")
+  total        Decimal  @db.Decimal(20, 0)
+  actorId      String   @map("actor_id")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("purchase_orders")
+}
+
+model PurchaseLine {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  orderId    String   @map("order_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  quantity   Decimal  @db.Decimal(18, 3)
+  received   Decimal  @default(0) @db.Decimal(18, 3)
+  unitCost   Decimal  @map("unit_cost") @db.Decimal(20, 0)
+  total      Decimal  @db.Decimal(20, 0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("purchase_lines")
+}
+
+model GoodsReceipt {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  orderId    String   @map("order_id") @db.Uuid
+  number     String
+  actorId    String   @map("actor_id")
+  total      Decimal  @db.Decimal(20, 0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  receiptId  String   @map("receipt_id") @db.Uuid
+  lineId     String   @map("line_id") @db.Uuid
+  quantity   Decimal  @db.Decimal(18, 3)
+  value      Decimal  @db.Decimal(20, 0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("goods_receipt_lines")
+}
+
+model SupplierBill {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  supplierId String   @map("supplier_id") @db.Uuid
+  receiptId  String   @map("receipt_id") @db.Uuid
+  reference  String
+  billDate   String   @map("bill_date")
+  dueDate    String   @map("due_date")
+  total      Decimal  @db.Decimal(20, 0)
+  paid       Decimal  @default(0) @db.Decimal(20, 0)
+  actorId    String   @map("actor_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("supplier_bills")
+}
+
+model ExpenseCategory {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  name       String
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, id])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  businessId  String   @map("business_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  categoryId  String   @map("category_id") @db.Uuid
+  supplierId  String?  @map("supplier_id") @db.Uuid
+  expenseDate String   @map("expense_date")
+  amount      Decimal  @db.Decimal(20, 0)
+  account     String
+  reference   String   @default("")
+  description String
+  status      String   @default("posted")
+  actorId     String   @map("actor_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("expenses")
+}
+
+model Invoice {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  businessId  String   @map("business_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  saleId      String?  @map("sale_id") @db.Uuid
+  number      String
+  invoiceDate String   @map("invoice_date")
+  dueDate     String   @map("due_date")
+  status      String   @default("draft")
+  total       Decimal  @db.Decimal(20, 0)
+  paid        Decimal  @default(0) @db.Decimal(20, 0)
+  notes       String   @default("")
+  actorId     String   @map("actor_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  invoiceId  String   @map("invoice_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  name       String
+  quantity   Decimal  @db.Decimal(18, 3)
+  unitPrice  Decimal  @map("unit_price") @db.Decimal(20, 0)
+  total      Decimal  @db.Decimal(20, 0)
+  cost       Decimal  @default(0) @db.Decimal(20, 0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("invoice_lines")
+}
+
+model FinancePayment {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  billId     String?  @map("bill_id") @db.Uuid
+  invoiceId  String?  @map("invoice_id") @db.Uuid
+  amount     Decimal  @db.Decimal(20, 0)
+  account    String
+  reference  String
+  actorId    String   @map("actor_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("finance_payments")
+}
+
+model StockTransfer {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  businessId    String    @map("business_id") @db.Uuid
+  branchId      String    @map("branch_id") @db.Uuid
+  destinationId String    @map("destination_id") @db.Uuid
+  number        String
+  status        String    @default("draft")
+  actorId       String    @map("actor_id")
+  sentBy        String?   @map("sent_by")
+  receivedBy    String?   @map("received_by")
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz
+  receivedAt    DateTime? @map("received_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  transferId String   @map("transfer_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  quantity   Decimal  @db.Decimal(18, 3)
+  value      Decimal  @default(0) @db.Decimal(20, 0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("stock_transfer_lines")
+}
+
+model StockCount {
+  id          String    @id @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  businessId  String    @map("business_id") @db.Uuid
+  branchId    String    @map("branch_id") @db.Uuid
+  number      String
+  status      String    @default("draft")
+  notes       String
+  actorId     String    @map("actor_id")
+  finalizedBy String?   @map("finalized_by")
+  finalizedAt DateTime? @map("finalized_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  countId    String   @map("count_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  expected   Decimal  @db.Decimal(18, 3)
+  counted    Decimal  @db.Decimal(18, 3)
+  unitCost   Decimal  @map("unit_cost") @db.Decimal(20, 0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, businessId, branchId, id])
+  @@map("stock_count_lines")
+}

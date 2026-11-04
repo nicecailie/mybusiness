@@ -1,0 +1,61 @@
+node_modules/
+.next/
+dist/
+.expo/
+.pnpm-store/
+.turbo/
+.vercel/
+.env
+.env.*
+!.env.example
+.data/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+apps/api/generated/
+
+# Private project planning documents excluded from the public source push.
+**/[Dd][Ee][Ss][Ii][Gg][Nn].md
+**/[Oo][Pp][Ee][Rr][Aa][Tt][Ii][Oo][Nn][Ss].md
+**/[Pp][Rr][Oo][Gg][Rr][Ee][Ss][Ss].md
+**/[Rr][Ee][Ll][Ee][Aa][Ss][Ee]_[Cc][Hh][Ee][Cc][Kk][Ll][Ii][Ss][Tt].md
+**/[Tt][Rr][Aa][Cc][Ee][Aa][Bb][Ii][Ll][Ii][Tt][Yy].md
+**/[Vv][Ee][Rr][Ii][Ff][Ii][Cc][Aa][Tt][Ii][Oo][Nn].md
+
+# Do not publish Codex skills or skill instructions.
+**/SKILL.md
+**/skills/**
+/skills.md
+
+# Local reference screenshots, not part of the MyBusiness project.
+/Rakuten ios Oct 2026/
+
+# Local-only artifacts excluded during the pre-push audit.
+secrets/
+.secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.pid
+*.tmp
+*.swp
+*.swo
+*~
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.npm/
+.pnpm-debug.log*
+tmp/
+temp/
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+# Next regenerates this environment-specific type entrypoint.
+apps/web/next-env.d.ts

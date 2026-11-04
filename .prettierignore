@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/.next
+**/.expo
+.data
+dist
+pnpm-lock.yaml
+*.docx
+context.md
+requirements.md
+skills.md
+.env*
+prisma/migrations
+
+**/next-env.d.ts

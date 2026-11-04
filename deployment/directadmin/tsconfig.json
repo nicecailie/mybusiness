@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "rootDir": "../..", "outDir": "../../.data/directadmin-compiled" },
+  "include": [
+    "../../apps/api/src/**/*.ts",
+    "../../packages/contracts/src/**/*.ts",
+    "../../packages/domain/src/**/*.ts",
+    "../../scripts/migrate.ts"
+  ],
+  "exclude": ["../../node_modules"]
+}

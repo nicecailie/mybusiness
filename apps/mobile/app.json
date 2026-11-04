@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "MyBusiness",
+    "slug": "mybusiness",
+    "scheme": "mybusiness",
+    "version": "0.1.0",
+    "icon": "./assets/mybusiness-icon.png",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router", "expo-secure-store", "expo-sqlite"],
+    "android": {
+      "package": "bi.mybusiness.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/mybusiness-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "bi.mybusiness.app" }
+  }
+}
