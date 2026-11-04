@@ -2,7 +2,6 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bell,
-  BookOpen,
   ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
@@ -27,9 +26,14 @@ import { can } from '../../../packages/domain/src/index';
 import {
   hasEffectiveModule,
   industryById,
-  type IndustryModule,
+  workspaceLinks,
 } from '../../../packages/domain/src/industries';
-import { messages, type Locale, type MessageKey } from '../../../packages/i18n/src/index';
+import {
+  messages,
+  workspaceMessages,
+  type Locale,
+  type MessageKey,
+} from '../../../packages/i18n/src/index';
 
 import { Login } from './forms';
 import { Brand, IconButton, Language, request, State, type Page } from './ui';
@@ -42,6 +46,7 @@ const navGroups = [
       ['overview', LayoutDashboard],
       ['sales', ShoppingBag],
       ['products', Package],
+      ['stock', Package],
       ['customers', Users],
     ],
   },
@@ -51,7 +56,7 @@ const navGroups = [
       ['purchases', ShoppingCart],
       ['invoices', FileText],
       ['expenses', Wallet],
-      ['accounting', BookOpen],
+      ['money', Wallet],
     ],
   },
   {
@@ -228,6 +233,8 @@ function App() {
         requested &&
         [
           'overview',
+          'money',
+          'stock',
           'sales',
           'products',
           'customers',
@@ -267,9 +274,10 @@ function App() {
     else if (params.get('verification') === 'complete') setVerificationStatus('completing');
   }, []);
   useEffect(() => {
+    if (!ready) return;
     document.documentElement.lang = locale;
     localStorage.setItem('mb-locale', locale);
-  }, [locale]);
+  }, [locale, ready]);
   useEffect(() => {
     if (!['completing', 'used'].includes(verificationStatus ?? '') || session.isPending) return;
     if (!session.data?.user) {
@@ -414,44 +422,8 @@ function App() {
     window.history.pushState(null, '', `?page=${p}`);
     setMobileMenu(false);
   };
-  const showNav = (p: string) => {
-    if (p === 'overview') return true;
-    if (p === 'team') return can(context.role, 'business.manage');
-    const moduleByPage: Partial<Record<string, IndustryModule>> = {
-      overview: 'reporting',
-      sales: 'sales',
-      sell: 'sales',
-      products: 'catalog',
-      customers: 'crm',
-      purchases: 'purchasing',
-      invoices: 'invoicing',
-      expenses: 'accounting',
-      accounting: 'accounting',
-      reports: 'reporting',
-    };
-    if (context.industryId) {
-      const module = moduleByPage[p];
-      if (p === 'settings') return true;
-      if (!module || !hasEffectiveModule(context.industryId, module)) return false;
-    }
-    if (p === 'purchases')
-      return can(context.role, 'purchase.read') || can(context.role, 'supplier.read');
-    if (p === 'invoices') return can(context.role, 'invoice.read');
-    if (p === 'expenses') return can(context.role, 'expense.read');
-    return p === 'products'
-      ? can(context.role, 'catalog.read')
-      : p === 'sell'
-        ? can(context.role, 'sale.create')
-        : p === 'customers'
-          ? can(context.role, 'customer.read')
-          : p === 'sales'
-            ? can(context.role, 'sale.read')
-            : p === 'accounting'
-              ? can(context.role, 'journal.read')
-              : p === 'overview' || p === 'reports'
-                ? can(context.role, 'report.read')
-                : p !== 'team';
-  };
+  const links = workspaceLinks(context.role, context.industryId, (p) => can(context.role, p));
+  const showNav = (p: string) => links.some((link) => link.page === p && !link.expert);
   const configuredIndustry = context.industryId ? industryById(context.industryId) : undefined;
   return (
     <Language.Provider value={locale}>
@@ -498,33 +470,65 @@ function App() {
               </button>
             )}
           <nav>
-            {navGroups.map((g) => (
-              <div className="nav-group" key={g.label}>
-                <span className="nav-label">{t(g.label)}</span>
-                {g.items
-                  .filter(([p]) => showNav(p))
-                  .map(([p, Icon]) => (
-                    <button
-                      className={`nav-item ${page === p ? 'active' : ''}`}
-                      key={p}
-                      onClick={() => navigate(p)}
-                      title={t(p)}
-                    >
-                      <Icon size={18} />
-                      <span>
-                        {p === 'products' && configuredIndustry
-                          ? configuredIndustry.terminology.products[locale]
-                          : t(p)}
-                      </span>
-                      {p === 'sales' && (
-                        <span className="nav-arrow">
-                          <ChevronRight size={13} />
+            {navGroups
+              .filter((g) => g.items.some(([p]) => showNav(p)))
+              .map((g) => (
+                <div className="nav-group" key={g.label}>
+                  <span className="nav-label">{t(g.label)}</span>
+                  {g.items
+                    .filter(([p]) => showNav(p))
+                    .map(([p, Icon]) => (
+                      <button
+                        className={`nav-item ${page === p ? 'active' : ''}`}
+                        key={p}
+                        onClick={() => navigate(p)}
+                        title={
+                          p === 'products' && configuredIndustry
+                            ? configuredIndustry.terminology.products[locale]
+                            : p === 'money'
+                              ? workspaceMessages[locale].money
+                              : p === 'stock'
+                                ? workspaceMessages[locale].stock
+                                : t(p)
+                        }
+                      >
+                        <Icon size={18} />
+                        <span>
+                          {p === 'products' && configuredIndustry
+                            ? configuredIndustry.terminology.products[locale]
+                            : p === 'money'
+                              ? workspaceMessages[locale].money
+                              : p === 'stock'
+                                ? workspaceMessages[locale].stock
+                                : t(p)}
                         </span>
-                      )}
+                        {p === 'sales' && (
+                          <span className="nav-arrow">
+                            <ChevronRight size={13} />
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              ))}
+            {links.some((l) => l.expert) && (
+              <details className="nav-group">
+                <summary>{workspaceMessages[locale].more}</summary>
+                {links
+                  .filter((l) => l.expert)
+                  .map((link) => (
+                    <button
+                      key={link.page}
+                      className="nav-item"
+                      onClick={() => navigate(link.page)}
+                    >
+                      {link.page === 'accounting'
+                        ? workspaceMessages[locale].expert
+                        : messages[locale][link.page as 'invoices' | 'reports']}
                     </button>
                   ))}
-              </div>
-            ))}
+              </details>
+            )}
           </nav>
           <div className="sidebar-bottom">
             <div className="workspace-note">

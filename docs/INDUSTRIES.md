@@ -1,29 +1,55 @@
-# Industry onboarding and module availability
+# Industry workspaces — actual implementation status
 
-The central catalog is `packages/domain/src/industries.ts`. IDs are stable and persisted on `businesses.industry_id`; existing businesses keep `NULL` until an owner selects an industry. A business industry is shared by all its members. The API resolves the stored industry after verifying membership and role.
+Updated 4 November 2026. Source of truth: packages/domain/src/industries.ts, backend services and permission gates. This checkpoint completes Phase A shared purchasing/spending/workspace work. It does not complete Phases B–D.
 
-## Implemented modules
+## Gates and navigation
 
-`catalog`, `inventory`, `sales` (cash POS), `crm` (customer directory), `accounting` (posted journal view), and `reporting` are the only implemented operational modules at this milestone. Direct API calls for an industry-disabled module, or one not in the implemented set, are rejected. Role permissions are checked separately. The current product has no subscription-entitlement service, so subscription access is not represented or claimed by this configuration.
+The catalog contains 25 industry IDs. A module is effective only when configured for that industry **and** present in implementedModules. Current effective-capability names: catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, accommodation and restaurant. A coarse effective flag does not mean every advanced workflow in that module exists.
 
-All other module IDs in the catalog are configuration markers only. In particular, room/reservation management, restaurant tables and kitchen queue, pharmacy batches and expiry, property listings, construction projects, appointments, memberships, and service-job scheduling are unavailable. They are not exposed as working routes or dashboard actions.
+workspaceLinks selects actual direct links from the catalog navigation modules intersected with server-compatible role permissions. The small home-card list reuses those links, with permission-gated Money or operational facts. Legacy null-industry businesses preserve their existing shared capabilities. Products terminology comes from the en/fr industry catalog. Settings/Team are further permission controlled; expert invoice/report records remain under More rather than separate Bills/Receipts/Payables entries in the main navigation.
 
-## Catalog
+The shared base and services configurations now include invoicing because its existing implemented services were previously unreachable for configured businesses. No variant, batch, kitchen, reservation or property gate has been turned on to expose an unfinished specialist page.
 
-| Category           | Industries                                                                                |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| Retail             | Clothing store, Furniture store, Grocery store, Hardware store, Other retail              |
-| Food & Hospitality | Bar and Pub, Restaurant, Fast Food, Guest House, Beverage distributor, Hotel, Spa Resort  |
-| Real estate        | Real estate agency, Construction company, Property Management, Gardening                  |
-| Health & Fitness   | Eyewear store, Fitness Center, Pharmacy, Hair salon                                       |
-| Trades             | Handyman, IT hardware & support, Solar energy system, Electronic store, Cleaning services |
+## Per-industry status
 
-Every industry can use the shared customer directory and reports where enabled by its configuration. Retail, food, hospitality, construction, health and trades use the existing product/inventory/POS services when those services fit the industry. Real estate agency and property management currently enable customer records and reporting only; their property workflows and POS/catalog are unavailable. Industry-specific room, menu, batch, project, service or membership modules remain marked but unavailable until implemented.
+| Industry ID            | Effective shared/basic modules                                                                          | Implemented / partial / deferred                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `clothing_store`       | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Partial retail: shared A implemented; Phase B variants/batches/FEFO/VAT/reorder deferred                   |
+| `furniture_store`      | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Shared A where configured; specialized industry work deferred                                              |
+| `grocery_store`        | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Partial retail: shared A implemented; Phase B variants/batches/FEFO/VAT/reorder deferred                   |
+| `hardware_store`       | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Shared A where configured; specialized industry work deferred                                              |
+| `other_retail`         | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Partial retail: shared A implemented; Phase B variants/batches/FEFO/VAT/reorder deferred                   |
+| `bar_pub`              | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, restaurant                | Partial: shared A + basic tables/orders/payment; Phase C lifecycle/kitchen/recipes deferred                |
+| `restaurant`           | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, restaurant                | Partial: shared A + basic tables/orders/payment; Phase C lifecycle/kitchen/recipes deferred                |
+| `fast_food`            | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, restaurant                | Partial: shared A + basic tables/orders/payment; Phase C lifecycle/kitchen/recipes deferred                |
+| `guest_house`          | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, accommodation, restaurant | Partial: shared A + basic rooms/stays (and restaurant where configured); Phase D finance/cleaning deferred |
+| `beverage_distributor` | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Partial retail: shared A implemented; Phase B variants/batches/FEFO/VAT/reorder deferred                   |
+| `hotel`                | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, accommodation, restaurant | Partial: shared A + basic rooms/stays (and restaurant where configured); Phase D finance/cleaning deferred |
+| `spa_resort`           | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, accommodation, restaurant | Partial: shared A + basic rooms/stays (and restaurant where configured); Phase D finance/cleaning deferred |
+| `real_estate_agency`   | crm, accounting, reporting                                                                              | Shared A where configured; specialized industry work deferred                                              |
+| `construction_company` | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, purchasing                | Shared A where configured; specialized industry work deferred                                              |
+| `property_management`  | crm, accounting, reporting                                                                              | Shared A where configured; specialized industry work deferred                                              |
+| `gardening`            | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, invoicing                 | Shared A where configured; specialized industry work deferred                                              |
+| `eyewear_store`        | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Shared A where configured; specialized industry work deferred                                              |
+| `fitness_center`       | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Shared A where configured; specialized industry work deferred                                              |
+| `pharmacy`             | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Shared A where configured; specialized industry work deferred                                              |
+| `hair_salon`           | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Shared A where configured; specialized industry work deferred                                              |
+| `handyman`             | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, invoicing                 | Shared A where configured; specialized industry work deferred                                              |
+| `it_hardware_support`  | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Shared A where configured; specialized industry work deferred                                              |
+| `solar_energy_system`  | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, invoicing                 | Shared A where configured; specialized industry work deferred                                              |
+| `electronic_store`     | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting                            | Partial retail: shared A implemented; Phase B variants/batches/FEFO/VAT/reorder deferred                   |
+| `cleaning_services`    | catalog, inventory, sales, crm, purchasing, invoicing, accounting, reporting, invoicing                 | Shared A where configured; specialized industry work deferred                                              |
 
-Hotels and spa resorts compose the accommodation and food/bar module groups under one business identity. Those operational workflows are currently unavailable; only the shared implemented modules appear in the interface. Pharmacy has no hotel or restaurant module enabled.
+## What exists
 
-## Provisioning and demo data
+- Phase A: one Purchases list; inline supplier/order entry; partial receipt with automatic receipt-backed bill; partial/full pay; receipt/payment history; supplier owed/pending quantities; exact weighted-average inventory and existing journals.
+- Money: journal-based sales/cost/profit, running versus equipment/other spending, current customer/supplier owed amounts, stock value, cash in/out, source-linked spending rows, product and category profit. Equipment is an asset; depreciation is out of scope. Cash is clearly separated from recognition/stock figures.
+- Retail baseline: SKU/barcode, ordinary stock intake/adjustments, counts, transfers, POS, registers, returns and offline queues. Variants/batches/expiry and VAT are not implemented.
+- Restaurant **does exist**: tables, unpaid orders and atomic payment through postSale with price checking. New/Preparing/Ready/Served lifecycle, kitchen price stripping, waiter/kitchen roles and recipes do not exist yet.
+- Accommodation **does exist**: rooms and guest-linked stays, exact night totals and overlap locking. Stay creation still does not post revenue. Checkout/deposits/room charges/housekeeping are Phase D work and must not be claimed as implemented hotel finance.
 
-The combined account and business setup creates a verified account, then provisions a tenant, business, first branch and owner membership. The request key is required and retries with the same body return the original business. The schema function derives all identifiers server-side. Demo setup, when selected, marks the tenant as demo, seeds explicitly named sample customers and relevant products, initial stock and balanced opening journals where catalog/inventory are implemented, and opens a local demo cash register for supported POS industries. Unchecked setup creates no sample records.
+## Provisioning and safe industry changes
 
-Account creation requires `ALLOW_REGISTRATION=true`, `RESEND_API_KEY`, and a verified sender in `EMAIL_FROM`. Better Auth sends the verification link through Resend. After email confirmation, the onboarding flow resumes and provisions the business; unverified accounts cannot provision a tenant. Terms acceptance is recorded with the business; legal document URLs are optional and stored when configured.
+Verified onboarding stores the requested industryId and selects the new owner's business/branch. Industry changes are not accepted by the strict business-update contract; the settings view warns that changing industry after setup is unavailable to protect existing transactions. There is no destructive conversion of historical business data.
+
+Account registration/verification continues to require the existing configured email provider/sender. Demo identities are fictional, local-only fixtures. No new waiter/kitchen/receptionist/housekeeping roles were added in Phase A. See INDUSTRY_WORKSPACE_BASELINE.md and INDUSTRY_WORKSPACE_IMPLEMENTATION_REPORT.md for the phase plan, accounting assumptions, limits and actual tests.

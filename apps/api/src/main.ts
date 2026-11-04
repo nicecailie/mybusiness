@@ -1,3 +1,5 @@
+import * as purchasing from './purchasing.js';
+import { moneyOverview } from './money.js';
 import * as core from './core.js';
 import { attachContracts } from './openapi.js';
 import 'reflect-metadata';
@@ -167,6 +169,39 @@ class ApiController {
     @Body() body: unknown,
   ) {
     return core.saveSupplier(await scope(req), key(req), body, c.idSchema.parse(id));
+  }
+  @Get('purchasing') async purchasingWorkspace(@Req() req: Request, @Query() query: unknown) {
+    const q = c.pageSchema.parse(query),
+      id = z.object({ id: c.idSchema.optional() }).parse(query).id;
+    return purchasing.purchaseWorkspace(await scope(req), q.page, q.search, id);
+  }
+  @Post('purchasing') async enterPurchase(@Req() req: Request, @Body() body: unknown) {
+    return purchasing.enterPurchase(await scope(req), key(req), body);
+  }
+  @Post('purchasing/:id/update') async editPurchaseEntry(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return purchasing.enterPurchase(await scope(req), key(req), body, c.idSchema.parse(id));
+  }
+  @Post('purchasing/:id/receive') async receivePurchaseEntry(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return purchasing.receiveAndBill(await scope(req), key(req), c.idSchema.parse(id), body);
+  }
+  @Post('purchasing/:id/pay') async payPurchaseEntry(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return purchasing.payPurchase(await scope(req), key(req), c.idSchema.parse(id), body);
+  }
+  @Get('money') async money(@Req() req: Request, @Query() query: unknown) {
+    const q = c.reportSchema.parse(query);
+    return moneyOverview(await scope(req), q.from, q.to);
   }
   @Get('purchases') async corePurchases(@Req() req: Request, @Query() query: unknown) {
     return core.purchases(await scope(req), c.pageSchema.parse(query).page);

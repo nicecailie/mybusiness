@@ -64,7 +64,9 @@ export const settlementSchema = z
     reference: text.min(1),
   })
   .strict();
-export const categorySchema = z.object({ name: text.min(2) }).strict();
+export const categorySchema = z
+  .object({ name: text.min(2), kind: z.enum(['running', 'equipment', 'other']).default('running') })
+  .strict();
 export const expenseSchema = z
   .object({
     categoryId: idSchema,
@@ -132,5 +134,41 @@ export const staffUpdateSchema = z
     userId: z.string().min(1).max(128),
     role: z.enum(['manager', 'cashier', 'inventory', 'purchasing', 'accountant', 'viewer']),
     active: z.boolean(),
+  })
+  .strict();
+
+export const purchaseEntrySchema = z
+  .object({
+    supplierId: idSchema.optional(),
+    supplier: supplierSchema.optional(),
+    mode: z.enum(['draft', 'order']),
+    orderDate: z.iso.date(),
+    expectedDate: z.iso.date().optional(),
+    notes: text.default(''),
+    lines: z
+      .array(
+        z
+          .object({
+            productId: idSchema,
+            quantity: quantitySchema,
+            unitCost: moneySchema.refine((v) => BigInt(v) > 0n),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100)
+      .refine(unique, 'Combine duplicate products.'),
+  })
+  .strict()
+  .refine((v) => !!v.supplierId !== !!v.supplier, 'Choose an existing supplier or add a new one.')
+  .refine(
+    (v) => !v.expectedDate || v.expectedDate >= v.orderDate,
+    'Delivery date must follow order date.',
+  );
+export const purchasePaymentSchema = z
+  .object({
+    amount: moneySchema.refine((v) => BigInt(v) > 0n).optional(),
+    account: z.enum(['1000 Cash', '1010 Bank']),
+    reference: text.min(1),
   })
   .strict();

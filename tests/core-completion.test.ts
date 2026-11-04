@@ -204,7 +204,7 @@ void test('supplier bill is tied to a single receipt and partial payment reduces
   );
 });
 void test('expenses post, reverse once and change authoritative profit', async () => {
-  const categoryId = (await core.createCategory(s, key(), { name: 'Rent' })).id;
+  const categoryId = (await core.createCategory(s, key(), { name: 'Rent ' + key() })).id;
   const id = (
     await core.createExpense(s, key(), {
       categoryId,

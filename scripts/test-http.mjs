@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import { spawn } from 'node:child_process';
 import { setTimeout } from 'node:timers/promises';
 // Better Auth intentionally permits only three sign-ins per ten seconds.
@@ -11,7 +13,9 @@ for (const file of [
   console.log(`Waiting for the authentication rate window before ${file}.`);
   await setTimeout(11000);
   const code = await new Promise((resolve, reject) => {
-    const child = spawn('pnpm', ['exec', 'tsx', '--test', `tests/${file}`], { stdio: 'inherit' });
+    const child = spawn(process.execPath, [require.resolve('tsx/cli'), '--test', `tests/${file}`], {
+      stdio: 'inherit',
+    });
     child.once('error', reject);
     child.once('exit', (status) => resolve(status ?? 1));
   });

@@ -25,6 +25,10 @@ export function attachContracts(document: OpenAPIObject): void {
     }
   }
   const commands: Record<string, z.ZodType> = {
+    '/api/v1/purchasing': core.purchaseEntrySchema,
+    '/api/v1/purchasing/{id}/update': core.purchaseEntrySchema,
+    '/api/v1/purchasing/{id}/receive': core.receiptSchema,
+    '/api/v1/purchasing/{id}/pay': core.purchasePaymentSchema,
     '/api/v1/suppliers': core.supplierSchema,
     '/api/v1/suppliers/{id}': core.supplierSchema,
     '/api/v1/purchases': core.purchaseSchema,

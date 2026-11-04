@@ -541,6 +541,8 @@ model SupplierBill {
 }
 
 model ExpenseCategory {
+  kind String @default("running")
+  systemKey String? @map("system_key")
   id         String   @id @db.Uuid
   tenantId   String   @map("tenant_id") @db.Uuid
   businessId String   @map("business_id") @db.Uuid
@@ -553,6 +555,7 @@ model ExpenseCategory {
 }
 
 model Expense {
+  postingAccount String @default("6000 Operating expenses") @map("posting_account")
   id          String   @id @db.Uuid
   tenantId    String   @map("tenant_id") @db.Uuid
   businessId  String   @map("business_id") @db.Uuid

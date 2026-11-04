@@ -307,6 +307,8 @@ export function Brand() {
   );
 }
 export type Page =
+  | 'money'
+  | 'stock'
   | 'overview'
   | 'sales'
   | 'products'

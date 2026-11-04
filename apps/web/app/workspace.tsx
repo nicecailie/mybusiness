@@ -1,5 +1,8 @@
 'use client';
-import { CorePanel, FinancialPanel, FocusedWorkspace, CustomerAccountPanel } from './core-panels';
+import { PurchasingWorkspace } from './purchasing-workspace';
+import { MoneyWorkspace, SpendingWorkspace } from './money-workspace';
+import { IndustryHome } from './industry-home';
+import { CorePanel, FinancialPanel, CustomerAccountPanel } from './core-panels';
 import { newOperationId } from './idempotency';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -22,7 +25,6 @@ import {
   Search,
   ShieldCheck,
   ShoppingBag,
-  ShoppingCart,
   Store,
   Users,
   Wallet,
@@ -45,7 +47,7 @@ import {
   industryById,
   type IndustryModule,
 } from '../../../packages/domain/src/industries';
-import { money, type Locale } from '../../../packages/i18n/src/index';
+import { money, workspaceMessages, type Locale } from '../../../packages/i18n/src/index';
 
 import {
   BusinessAdmin,
@@ -89,6 +91,7 @@ export function WorkspacePage({
     [archived, setArchived] = useState(false),
     [receiptId, setReceiptId] = useState(''),
     [customerId, setCustomerId] = useState(''),
+    [expertPurchases, setExpertPurchases] = useState(false),
     [search, setSearch] = useState(''),
     [currentPage, setCurrentPage] = useState(1),
     [period, setPeriod] = useState('week'),
@@ -258,6 +261,10 @@ export function WorkspacePage({
     </div>
   );
   const pageAccess: Partial<Record<Page, [Permission, IndustryModule]>> = {
+    money: ['finance.read', 'accounting'],
+    stock: ['stock.receive', 'inventory'],
+    purchases: ['purchase.read', 'purchasing'],
+    expenses: ['expense.read', 'accounting'],
     products: ['catalog.read', 'catalog'],
     customers: ['customer.read', 'crm'],
     sales: ['sale.read', 'sales'],
@@ -271,22 +278,39 @@ export function WorkspacePage({
   if (access && !allowed(access[0], access[1])) {
     content = (
       <section className="panel core-panel">
-        <Empty
-          icon={ShieldCheck}
-          title="Access denied"
-          hint="Your role or enabled business modules do not allow this page."
-        />
+        <Empty icon={ShieldCheck} title={workspaceMessages[locale].denied} hint="" />
       </section>
     );
-  } else if (page === 'overview' && !allowed('report.read', 'reporting')) {
-    content = <FocusedWorkspace context={context} navigate={navigate} />;
-  } else if (page === 'overview' || page === 'reports') {
+  } else if (page === 'overview') {
+    content = <IndustryHome context={context} locale={locale} navigate={navigate} />;
+  } else if (page === 'money') {
+    content = <MoneyWorkspace context={context} locale={locale} />;
+  } else if (page === 'stock') {
+    content = <CorePanel context={context} section="inventory" />;
+  } else if (page === 'purchases') {
+    content = expertPurchases ? (
+      <>
+        <button className="button secondary" onClick={() => setExpertPurchases(false)}>
+          {locale === 'fr' ? 'Retour aux achats' : 'Back to purchases'}
+        </button>
+        <CorePanel context={context} section="purchases" />
+      </>
+    ) : (
+      <PurchasingWorkspace
+        context={context}
+        locale={locale}
+        legacy={() => setExpertPurchases(true)}
+      />
+    );
+  } else if (page === 'expenses') {
+    content = <SpendingWorkspace context={context} locale={locale} />;
+  } else if (page === 'reports') {
     const d = report.data;
     content = (
       <>
         {header(
-          page === 'overview' ? t('greeting') : t('reports'),
-          page === 'overview' ? t('subtitle') : `${context.businessName} · ${context.branchName}`,
+          t('reports'),
+          `${context.businessName} · ${context.branchName}`,
           allowed('sale.create', 'sales') ? (
             <button className="button primary" onClick={() => navigate('sell')}>
               <Plus size={17} />
@@ -871,11 +895,7 @@ export function WorkspacePage({
       <>
         {header(t(page))}
         <section className="panel availability">
-          <Empty
-            icon={page === 'purchases' ? ShoppingCart : page === 'invoices' ? FileText : Wallet}
-            title={t('availableSoon')}
-            hint={t('moduleHint')}
-          />
+          <Empty icon={FileText} title={t('availableSoon')} hint={t('moduleHint')} />
           <button className="button secondary" onClick={() => navigate('overview')}>
             <ChevronLeft size={17} />
             {t('home')}
@@ -915,6 +935,16 @@ export function WorkspacePage({
         </p>
       )}
       {content}
+      {page === 'reports' && allowed('finance.read', 'accounting') && (
+        <FinancialPanel context={context} from={from} to={to} />
+      )}
+      {page === 'settings' && (
+        <p className="notice">
+          {locale === 'fr'
+            ? 'Le changement d’activité est indisponible après la création pour protéger les opérations existantes.'
+            : 'Industry changes are unavailable after setup to protect existing transactions.'}
+        </p>
+      )}
       {page === 'customers' && customerId && (
         <CustomerAccountPanel
           key={customerId}
@@ -923,11 +953,6 @@ export function WorkspacePage({
           onClose={() => setCustomerId('')}
         />
       )}
-      {['overview', 'reports'].includes(page) &&
-        can(context.role, 'finance.read') &&
-        (!context.industryId || hasEffectiveModule(context.industryId, 'accounting')) && (
-          <FinancialPanel context={context} from={from} to={to} />
-        )}
       {page === 'products' &&
         (can(context.role, 'stock.transfer') || can(context.role, 'stock.count')) && (
           <CorePanel key={context.branchId} context={context} section="inventory" />

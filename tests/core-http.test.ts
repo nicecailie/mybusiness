@@ -43,6 +43,8 @@ void test('new core HTTP routes validate input, enforce real session permissions
   assert.equal((await post('suppliers', { name: 'x' })).status, 400);
   assert.equal((await post('suppliers', { name: 'Denied' }, cashier)).status, 403);
   for (const path of [
+    'purchasing',
+    'money?from=2026-11-04&to=2026-11-04',
     'suppliers',
     'purchases',
     'invoices',
@@ -79,6 +81,79 @@ void test('new core HTTP routes validate input, enforce real session permissions
         'suppliers',
         { name: 'CSRF denied' },
         { ...owner, origin: 'https://attacker.invalid' },
+      )
+    ).status,
+    403,
+  );
+  const date = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Bujumbura',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const productReply = await post('products', {
+    name: 'HTTP workspace product',
+    sku: randomUUID(),
+    category: 'Tests',
+    price: '200',
+    cost: '0',
+    lowStock: 1,
+    type: 'goods',
+  });
+  assert.equal(productReply.status, 201);
+  const product = (await productReply.json()) as { id: string };
+  const entry = {
+      supplier: { name: 'HTTP inline ' + randomUUID() },
+      mode: 'order',
+      orderDate: date,
+      lines: [{ productId: product.id, quantity: 3, unitCost: '100' }],
+    },
+    entryKey = randomUUID();
+  const purchaseResponse = await post('purchasing', entry, owner, entryKey);
+  assert.equal(purchaseResponse.status, 201);
+  const purchase = (await purchaseResponse.json()) as { id: string };
+  assert.deepEqual(await (await post('purchasing', entry, owner, entryKey)).json(), purchase);
+  const workspace = (await (
+    await fetch(origin + '/api/v1/purchasing?id=' + purchase.id, { headers: owner })
+  ).json()) as { items: { lines: { id: string }[] }[] };
+  const receiptKey = randomUUID(),
+    receiptBody = { lines: [{ lineId: workspace.items[0]!.lines[0]!.id, quantity: 1 }] };
+  const received = await post(`purchasing/${purchase.id}/receive`, receiptBody, owner, receiptKey);
+  assert.equal(received.status, 201);
+  assert.deepEqual(
+    await received.json(),
+    await (await post(`purchasing/${purchase.id}/receive`, receiptBody, owner, receiptKey)).json(),
+  );
+  assert.equal(
+    (
+      await post(`purchasing/${purchase.id}/pay`, {
+        amount: '50',
+        account: '1000 Cash',
+        reference: 'HTTP partial',
+      })
+    ).status,
+    201,
+  );
+  assert.equal(
+    (
+      await post(`purchasing/${purchase.id}/pay`, {
+        account: '1000 Cash',
+        reference: 'HTTP remaining',
+      })
+    ).status,
+    201,
+  );
+  const final = (await (
+    await fetch(origin + '/api/v1/purchasing?id=' + purchase.id, { headers: owner })
+  ).json()) as { items: { owed: string; paid: string }[] };
+  assert.equal(final.items[0]!.owed, '0');
+  assert.equal(final.items[0]!.paid, '100');
+  assert.equal(
+    (
+      await post(
+        `purchasing/${purchase.id}/pay`,
+        { amount: '1', account: '1000 Cash', reference: 'Denied' },
+        cashier,
       )
     ).status,
     403,

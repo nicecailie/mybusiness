@@ -3618,3 +3618,63 @@ fieldset:disabled select {
     flex-wrap: wrap;
   }
 }
+
+.workspace-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.money-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  min-height: 80px;
+  cursor: pointer;
+}
+.money-card strong {
+  font-size: 20px;
+}
+.core-panel fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.core-panel button,
+.core-panel summary {
+  min-height: 44px;
+}
+@media (max-width: 700px) {
+  .purchase-table table,
+  .purchase-table tbody,
+  .purchase-table tr,
+  .purchase-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .purchase-table thead {
+    display: none;
+  }
+  .purchase-table tr {
+    border-bottom: 2px solid var(--border, #e5e7eb);
+    padding: 12px 0;
+  }
+  .purchase-table td:before {
+    content: attr(data-label);
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .purchase-table td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .purchase-table button {
+    margin: 8px 0;
+  }
+}

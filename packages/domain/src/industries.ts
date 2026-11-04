@@ -1,3 +1,4 @@
+import type { Role, Permission } from '../../contracts/src/index.js';
 export const modules = [
   'catalog',
   'inventory',
@@ -106,6 +107,7 @@ const base = [
   'sales',
   'crm',
   'purchasing',
+  'invoicing',
   'accounting',
   'reporting',
 ] as const satisfies readonly IndustryModule[];
@@ -117,6 +119,7 @@ const services = [
   'sales',
   'crm',
   'purchasing',
+  'invoicing',
   'accounting',
   'reporting',
   'service_jobs',
@@ -411,4 +414,92 @@ export const industryById = (id: string): IndustryDefinition | undefined =>
 export function hasEffectiveModule(industryId: string | null, module: IndustryModule): boolean {
   const industry = industryId ? industryById(industryId) : undefined;
   return !!industry && industry.enabledModules.includes(module) && implementedModules.has(module);
+}
+
+export type WorkspacePage =
+  | 'overview'
+  | 'sell'
+  | 'sales'
+  | 'products'
+  | 'stock'
+  | 'purchases'
+  | 'customers'
+  | 'invoices'
+  | 'expenses'
+  | 'money'
+  | 'team'
+  | 'settings'
+  | 'accounting'
+  | 'reports';
+export interface WorkspaceLink {
+  page: WorkspacePage;
+  label:
+    | 'overview'
+    | 'newSale'
+    | 'todaySales'
+    | 'product'
+    | 'stock'
+    | 'purchases'
+    | 'customer'
+    | 'money'
+    | 'spending'
+    | 'team'
+    | 'settings'
+    | 'expert';
+  module?: IndustryModule;
+  permission?: Permission;
+  expert?: boolean;
+}
+const workspaceLinkDefinitions: readonly WorkspaceLink[] = [
+  { page: 'overview', label: 'overview' },
+  { page: 'sell', label: 'newSale', module: 'sales', permission: 'sale.create' },
+  { page: 'sales', label: 'todaySales', module: 'sales', permission: 'sale.read' },
+  { page: 'products', label: 'product', module: 'catalog', permission: 'catalog.read' },
+  { page: 'stock', label: 'stock', module: 'inventory', permission: 'stock.receive' },
+  { page: 'purchases', label: 'purchases', module: 'purchasing', permission: 'purchase.read' },
+  { page: 'customers', label: 'customer', module: 'crm', permission: 'customer.read' },
+  { page: 'money', label: 'money', module: 'accounting', permission: 'finance.read' },
+  { page: 'expenses', label: 'spending', module: 'accounting', permission: 'expense.read' },
+  {
+    page: 'invoices',
+    label: 'expert',
+    module: 'invoicing',
+    permission: 'invoice.read',
+    expert: true,
+  },
+  {
+    page: 'reports',
+    label: 'expert',
+    module: 'reporting',
+    permission: 'report.read',
+    expert: true,
+  },
+  {
+    page: 'accounting',
+    label: 'expert',
+    module: 'accounting',
+    permission: 'journal.read',
+    expert: true,
+  },
+  { page: 'team', label: 'team', permission: 'business.manage' },
+  { page: 'settings', label: 'settings' },
+];
+export function workspaceLinks(
+  role: Role,
+  industryId: string | null,
+  allowed: (permission: Permission) => boolean,
+): WorkspaceLink[] {
+  const industry = industryId ? industryById(industryId) : undefined;
+  return workspaceLinkDefinitions.filter((link) => {
+    if (link.permission && !allowed(link.permission)) return false;
+    if (
+      link.module &&
+      industryId &&
+      (!industry?.navigation.includes(link.module) || !hasEffectiveModule(industryId, link.module))
+    )
+      return false;
+    if (link.page === 'products' && ['cashier', 'purchasing', 'accountant'].includes(role))
+      return false;
+    return true;
+  });
 }
