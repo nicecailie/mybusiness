@@ -36,6 +36,9 @@ type Balance = {
 };
 type MoneyData = {
   metrics: Record<
+    | 'restaurantRevenue'
+    | 'accommodationRevenue'
+    | 'guestDepositsHeld'
     | 'sales'
     | 'costOfGoods'
     | 'profitOnSales'
@@ -124,6 +127,27 @@ export function MoneyWorkspace({ context, locale }: { context: Context; locale: 
       ) : (
         <>
           {data.data.valuationPending && <p className="notice warning">{t.provisional}</p>}
+          {context.industryId &&
+            [
+              'hotel',
+              'guest_house',
+              'lodge',
+              'resort',
+              'restaurant',
+              'fast_food',
+              'bar_pub',
+            ].includes(context.industryId) && (
+              <div className="workspace-cards">
+                {(['restaurantRevenue', 'accommodationRevenue', 'guestDepositsHeld'] as const).map(
+                  (k) => (
+                    <section className="panel" key={k}>
+                      <h3>{t[k]}</h3>
+                      <strong>{bif(data.data.metrics[k], locale)}</strong>
+                    </section>
+                  ),
+                )}
+              </div>
+            )}
           <div className="workspace-cards">
             {(
               [

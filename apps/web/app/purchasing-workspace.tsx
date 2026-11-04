@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, useEffect, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Context, Product } from '../../../packages/contracts/src/index';
 import { can } from '../../../packages/domain/src/index';
@@ -28,6 +28,7 @@ export type PurchaseRow = {
     quantity: string;
     received: string;
     remaining: number;
+    batchTracked?: boolean;
     unitCost: string;
   }[];
   receipts: { id: string; number: string; total: string; createdAt: string }[];
@@ -65,6 +66,7 @@ export function PurchasingWorkspace({
     [search, setSearch] = useState(''),
     [showSuppliers, setShowSuppliers] = useState(false),
     [form, setForm] = useState<'new' | 'receive' | 'pay' | null>(null),
+    [suggestedSupplier, setSuggestedSupplier] = useState(''),
     [editing, setEditing] = useState<PurchaseRow | null>(null),
     [detail, setDetail] = useState(''),
     [quickSupplier, setQuickSupplier] = useState(false),
@@ -95,6 +97,29 @@ export function PurchasingWorkspace({
       ),
     enabled: form === 'new',
   });
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('reorder');
+    if (!id) return;
+    let active = true;
+    void request<{
+      productId: string;
+      quantity: number;
+      unitCost: string;
+      supplierId: string | null;
+    }>(`v1/products/${id}/reorder`, context)
+      .then((p) => {
+        if (!active) return;
+        setLines([{ productId: p.productId, quantity: String(p.quantity), unitCost: p.unitCost }]);
+        setSuggestedSupplier(p.supplierId ?? '');
+        setForm('new');
+      })
+      .catch((e) => {
+        if (active) setError(e instanceof Error ? e.message : t.failed);
+      });
+    return () => {
+      active = false;
+    };
+  }, [context, t.failed]);
   const inFlight = useRef(false);
   const pending = useRef<{ path: string; body: unknown; key: string } | null>(null);
   async function mutate(path: string, body: unknown) {
@@ -166,7 +191,11 @@ export function PurchasingWorkspace({
     } else if (form === 'receive' && editing) {
       const received = editing.lines
         .filter((l) => l.remaining > 0)
-        .map((l) => ({ lineId: l.id, quantity: Number(data.get(l.id)) }))
+        .map((l) => ({
+          lineId: l.id,
+          quantity: Number(data.get(l.id)),
+          expiresOn: String(data.get('expiry-' + l.id) || '') || undefined,
+        }))
         .filter((l) => l.quantity > 0);
       if (!received.length) {
         setError(t.chooseItems);
@@ -268,7 +297,11 @@ export function PurchasingWorkspace({
                     ) : (
                       <label>
                         {t.supplier}
-                        <select name="supplierId" required defaultValue={editing?.supplierId ?? ''}>
+                        <select
+                          name="supplierId"
+                          required
+                          defaultValue={editing?.supplierId ?? suggestedSupplier}
+                        >
                           <option value="">—</option>
                           {query.data?.suppliers
                             .filter((s) => s.active)
@@ -397,6 +430,14 @@ export function PurchasingWorkspace({
                     .map((l) => (
                       <label key={l.id}>
                         {l.name} · {t.remaining}: {l.remaining}
+                        {l.batchTracked && (
+                          <input
+                            type="date"
+                            name={'expiry-' + l.id}
+                            required
+                            aria-label={locale === 'fr' ? 'Date de péremption' : 'Expiry date'}
+                          />
+                        )}
                         <input
                           name={l.id}
                           aria-label={l.name}

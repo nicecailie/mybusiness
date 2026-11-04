@@ -44,6 +44,10 @@ const navGroups = [
     label: 'workspace',
     items: [
       ['overview', LayoutDashboard],
+      ['orders', ShoppingBag],
+      ['kitchen', Store],
+      ['rooms', Store],
+      ['housekeeping', Store],
       ['sales', ShoppingBag],
       ['products', Package],
       ['stock', Package],
@@ -233,6 +237,10 @@ function App() {
         requested &&
         [
           'overview',
+          'orders',
+          'kitchen',
+          'rooms',
+          'housekeeping',
           'money',
           'stock',
           'sales',

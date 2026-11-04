@@ -251,6 +251,7 @@ export const purchaseWorkspace = (s: Scope, page = 1, search = '', selectedId?: 
           lines: orderLines.map((l) => ({
             ...l,
             name: products.find((p) => p.id === l.productId)?.name,
+            batchTracked: products.find((p) => p.id === l.productId)?.batchTracked,
             remaining:
               Number(quantityUnits(Number(l.quantity)) - quantityUnits(Number(l.received))) / 1000,
           })),

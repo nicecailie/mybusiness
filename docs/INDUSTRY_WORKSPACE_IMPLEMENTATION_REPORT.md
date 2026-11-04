@@ -1,111 +1,80 @@
-# Industry workspace implementation checkpoint
+# Industry workspace implementation report
 
-Date: 4 November 2026. Baseline: commit `0d441331dbcebfd939fe000f3c6a994a94862151`, clean working tree at the start of this request. See INDUSTRY_WORKSPACE_BASELINE.md for the source-derived 25-industry inventory and 15 retail-capability classifications.
+Updated 4 November 2026. Phase A was delivered in `273027b`. This continuation implements B (retail variants/expiry), C (restaurant kitchen/recipes) and D (hotel checkout/deposits). The original ZIP/Core Completion inventory remains historical; this continuation is measured against the clean Phase A commit.
 
-## Checkpoint and scope
+## Retail (B)
 
-**Phase A completed at this checkpoint. Phases B, C and D were not started.** This is not completion of the whole industry-workspace request. The stop is at a tested shared-core boundary: starting variants/batches, kitchen/recipe stock or hotel deposits without completing their schema, offline/return, financial and role invariants would create unsafe partial workflows. The user explicitly permits finishing the current phase and documenting the stop when the task budget is exhausted.
+- The quick grid accepts attribute, SKU/barcode, price, opening quantity/cost and optional expiry. Variants are child Product rows with stable IDs, free-text attributes, independent SKU/barcode/price and shared StockBalance/StockMovement quantities and weighted-average costs. The original product and its history remain intact. POS selects a child in one tap; signed offline replay uses the same child ID.
+- Batch tracking is optional and selected at creation. Receiving/opening stock requires an expiry date. Branch-scoped lot quantities allocate FEFO; online POS and invoices cannot consume expired lots. Expired quantities remain visible for writeoff rather than disappearing from inventory value. Transfers carry lot expiries into the destination; stock counts and adjustments use the common movement primitive.
+- Sale lines capture the actual ingredient/product quantities, costs and lot allocations. Returns restore those snapshots, including the original expiry, rather than using today's recipe or cost. Non-batch products retain the original shortage/offline policy.
+- Low-stock Reorder opens the shared purchase form with the latest branch purchase's supplier/unit cost and a suggested quantity up to twice the minimum stock level. Missing supplier/history remains an explicit user choice. Money retains product/category performance.
+- VAT was missing. It is an optional per-product rate (0–100%, basis points), zero by default, included in the displayed price. Whole-BIF tax is rounded per line, snapshotted and posted to `2200 VAT payable`; refunds reverse cumulative original tax. Money product profit excludes VAT. Offline prices and VAT come from the signed catalog proof, with old proofs interpreted as zero VAT.
 
-No specialist placeholder pages or extra module flags were enabled to imply unfinished features work. Existing retail/POS/offline/returns, restaurant order payment, accommodation stays and expert reports are retained. In particular, **the existing stay-to-finance gap remains unresolved until D**; do not claim hotel revenue now appears in Money merely because accommodation is a configured module.
+## Restaurant / fast food (C)
 
-## What was reused
+- `New → Preparing → Ready → Served → Paid`, plus cancellation before settlement. Counter orders can go directly New → Ready. Old unpaid orders migrate to Served; old paid records remain paid.
+- Waiters select a table/counter, tap menu items and send, or append items to an open order. Append resets preparation status; cancellation consumes no stock.
+- Kitchen has a separate polling queue and Start/Ready buttons. Its API explicitly selects item names, quantities, kind and preparation data; it never serializes price/cost/payment fields.
+- Cashiers pay Ready/Served orders through the existing order advisory lock, price-change guard and `postSale`. Concurrent retries return the same sale.
+- Optional recipes belong to service menu items; direct goods use their own stock. Payment captures and consumes ingredient quantities inside the sale transaction, with one COGS/revenue posting. Returns use the captured ingredient quantities/costs after recipe edits. Fractional quantities that cannot represent ingredient thousandths are rejected instead of rounded silently.
+- Added waiter/kitchen permissions and staff templates. Waiters have no suppliers, finance or team access; kitchen has no catalog or payment access. Backend membership revalidation and module checks remain authoritative.
 
-Existing Supplier → PurchaseOrder/Lines → GoodsReceipt/Lines → SupplierBill → FinancePayment records; shared stock balances/movements and weighted-average costing; exact BIF helpers; scoped/write, membership locks, RLS, audit/outbox and balanced immutable journals; existing category/expense/invoice/report endpoints; current industry catalog and web panel/button/table vocabulary.
+## Hotel / guest house (D)
 
-Transaction bodies for saveSupplier, savePurchase, receivePurchase, createBill and settle were extracted into reusable transaction helpers in core.ts. The legacy wrappers retain permissions, operation names, input fingerprints and results. financialReport now delegates to the same in-transaction implementation reused by Money; it remains the authoritative sales/profit source. No competing inventory, sale, payment or ledger tables were added.
+- Room cards show Available, Reserved, In use, Needs cleaning, Cleaning and Under repair. Reservations capture guest, dates, guest count and the agreed nightly rate. Room advisory locks and a database trigger reject overlapping active stays; cancelled/no-show dates are released.
+- Check-in changes the stay to In use. Checkout creates and issues an existing Invoice, applies deposits using FinancePayment, optionally takes a full/partial cash/bank payment, and sets the room to Needs cleaning. Unpaid balances remain accounts receivable and can be collected from the stay screen. Stay history and a guest bill retain extras, deposits and linked charges.
+- Housekeeping has a dedicated price-free room list and Start/Done actions. Under-repair changes require business management permission. Receptionists use stay-specific billing permissions and cannot access general finance, supplier, team or invoice endpoints.
+- Internal service products satisfy InvoiceLine.productId for nights, extras and restaurant-charge clearing. They are hidden from normal catalog/POS and rejected by public invoice creation.
+- A restaurant order charged to an occupied room uses `postSale` once, deducting stock and posting restaurant revenue/COGS without inventing a cash payment. It debits `1400 Guest room charges`. Checkout debits invoice AR and credits that clearing asset for the linked restaurant charge; it does not create another restaurant sale, stock deduction, VAT liability or revenue entry.
 
-## What is new in A
+## Accounting policies and practical limits
 
-### One-screen purchasing
+| Policy               | Behavior                                                                                                                                                                                                                                                                                           |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Room revenue         | Recognized at checkout at the captured rate for all booked nights; no automatic nightly accrual or early-departure proration.                                                                                                                                                                      |
+| Restaurant revenue   | Recognized when paid or charged to an occupied room after preparation. Guest invoice clearing is not a second sale.                                                                                                                                                                                |
+| Deposits             | Dr cash/bank, Cr `2300 Guest deposits` on receipt. Applied at checkout: Dr deposits, Cr AR through FinancePayment, without another cash movement. Cancellation/no-show refunds held amounts to their original accounts; no automatic forfeiture. Deposits are capped at the agreed room charge.    |
+| Hotel cash           | FinancePayment cash/bank is business cash, separate from actor POS drawer payments. No fictitious register session or cash receipt is generated for a room charge.                                                                                                                                 |
+| VAT                  | Inclusive, optional product rate; no default legal rate, automatic tax registration, hotel-tax assumption or tax-return filing. Hotel services default to zero VAT and require a business-reviewed policy before changing tax treatment.                                                           |
+| Valuation            | One moving weighted-average StockBalance remains authoritative. Lots track quantity/expiry, not a second cost ledger.                                                                                                                                                                              |
+| Expiry and offline   | Expiry-tracked products require online checkout, including mobile, so current lots can be checked. Ordinary products and variants retain signed offline replay.                                                                                                                                    |
+| Recipes and invoices | Recipe items use restaurant/POS settlement, not independent credit invoices, to preserve the captured consumption/return path.                                                                                                                                                                     |
+| Legacy stays         | Marked legacy/unbilled; no backdated invoices, deposits or revenue are invented by migration. Review historical stays before operational checkout.                                                                                                                                                 |
+| Credits              | Settled room-charge returns require a reviewed guest credit workflow; generic POS cash refunds reject room charges. Automatic guest credit notes, room discounts/proration, deposit forfeiture, depreciation, bar tabs and advanced serving-unit/fast-food features remain outside this increment. |
 
-- One Purchases list with supplier/items/total, Ordered?, Received and Paid columns, next actions, search/pagination, same-screen supplier balances and a history drawer. Phone layout stacks the status columns into usable cards.
-- One form with existing supplier or inline new supplier, product/quantity/cost rows, Save as order and Save draft. Inline supplier and purchase commit atomically; a failed item validation does not leave a stray supplier.
-- A Receive box prefilled with every pending line. Actual quantities can be edited, including omitting a line by receiving zero. It reuses receiving/costing, then automatically creates any missing valued receipt-backed bill and the existing inventory/clearing/AP journals **inside the same transaction**.
-- Mark paid defaults to the full amount still owed for received items, supports partial amount and cash/bank, and allocates existing bills using the same settlement helper. No payment can exceed the current received/billed balance. Same-key double-click/network retries return one effect; purchase/bill locks serialize legacy payment paths too.
-- Receiving/paying a legacy received-but-unbilled purchase safely creates its missing bill. Supplier owed includes that received-but-unbilled value, so row and Money balances do not silently drop old liabilities.
-- Supplier owed, bills and payment history are withheld from inventory/purchasing roles without existing finance authority. Inventory can create the system's receipt/bill postings through receiving but gains no payment or finance-read grant. Cashiers are denied directly by APIs.
-- Payment status is explicitly for received items. Prepayment before receipt is not added. Zero-incremental-value fractional receipts remain quantity-auditable without a zero-value bill/journal.
-- Ordinary navigation has no Bills, Receipts or Payables pages. Existing expert CorePanel/legacy endpoints remain under More options for finance users.
+## Database and rollout
 
-### Costs and Money
+Apply `202611040007_retail_stock`, `008_hospitality_workflows`, `009_hotel_accounting` and `010_hotel_update_grants` with the migration-owner connection, then generate the Prisma client. These are forward migrations: no table/data deletion or reset, no mutation of earlier checksummed migrations. They add scoped tables/columns, update old unpaid statuses, extend role constraints/routines, replace the sale/payment amount checks for explicit room settlement, and grant only hotel workflow update columns. Existing forced RLS is preserved; new lot/deposit tables have forced tenant/business/branch RLS. Guest deposits are insert-only for the runtime role.
 
-- ExpenseCategory.kind = running/equipment/other, optional systemKey for translated default categories, and defaults for current/future businesses. Existing custom category classifications are preserved; owners should review old categories before production use.
-- Expense.postingAccount snapshots its original debit account. Running = 6000; Equipment = 1500 asset; Other = 6100 cost. Equipment never reduces ordinary running-cost profit; its reversal uses the recorded account even if category metadata later changes. Existing expense rows keep their original 6000 posting basis.
-- A plain Costs screen uses the existing categories/expense/reversal endpoints and actual kind labels. Stock deliveries belong in Purchases; posted costs are corrected by reasoned Undo/re-entry, not overwritten.
-- Money reuses journal-based financialReport, with sales, cost of goods, profit on sales, running costs, stock losses/gains, profit after costs, current customer/supplier owed and stock value. Supplier owed includes both AP and received-but-unbilled journal balances.
-- Cash in/out comes from actual 1000 Cash journal debit/credit totals for the selected dates, clearly separated from sales/profit/current balances and explicitly excluding bank payments. These are business-cash movements, not a bank balance or a POS drawer count.
-- One All spending list derives purchase/cost/equipment/other rows and reversals from the same journals and links back to the original purchase/cost. It does not expense stock purchases or count a supplier payment as a second purchase.
-- Product and category profit and margin are computed on the server from existing sales/invoice/return sources. Stock valuation/detail is server-supplied. Frontend uses BigInt formatting, not financial calculations.
+Local/Windows update from the repository root:
 
-### Workspaces and compatibility
+```powershell
+pnpm.cmd install --frozen-lockfile
+pnpm.cmd db:generate
+pnpm.cmd db:migrate
+pnpm.cmd db:seed
+pnpm.cmd dev
+```
 
-- workspaceLinks in industries.ts filters actual direct links by the catalog's configured/effective modules and role grants. A small IndustryHome reuses the allowed links and permission-gated operational or Money facts. No widget framework or specialist route stubs.
-- Shared base/service industries now include their already-implemented invoicing module; no variants/batches/kitchen/reservation gate was turned on.
-- Cashier: sale/receipts/register; inventory: products/stock/receiving; purchasing: purchases/suppliers; accountant: costs/Money and expert records; owner/manager summaries and existing allowed actions. Server scopes still enforce each API independently from these links.
-- Industry terminology comes from the existing bilingual catalog. New Phase A labels/statuses/forms are in the shared en/fr message dictionary. A browser-discovered mount race overwriting saved locale was fixed, and French persists after refresh.
-- Verified onboarding retains requested industryId and branch context; strict business-update input continues to reject industry changes, with a settings warning protecting existing transactions. No historical conversion route was introduced.
-- pnpm dev/dev:lan use package-name filters, addressing the reported Windows directory-filter mismatch. HTTP runner launches the installed tsx CLI through Node for Windows portability while retaining real authentication-rate isolation. Browser smoke accepts an executable override or system/Playwright Chromium. Native Windows execution was not performed in this Linux environment.
+Use Node 24 or newer and the existing `.env`/PostgreSQL setup. Open http://localhost:3000. Existing production databases should be backed up through their normal operations process before applying migrations; demo seeding remains explicitly restricted to demo environments.
 
-## New endpoints (legacy endpoints retained)
+The seed adds fictional `restaurant-owner@example.test`, `hotel-owner@example.test`, `waiter@example.test`, `kitchen@example.test`, `restaurant-cashier@example.test`, `receptionist@example.test` and `housekeeping@example.test`. They use the ignored `.env` DEMO_PASSWORD. Original owner contexts and existing demo data remain unchanged.
 
-| Method/path                         | Permission and behavior                                                                           |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
-| GET /api/v1/purchasing              | purchase.read; scoped row/status/quantity/history view; financial fields further restricted       |
-| POST /api/v1/purchasing             | purchase.create; requires supplier.create for inline supplier, purchase.approve for Save as order |
-| POST /api/v1/purchasing/:id/update  | same permissions; draft-only reuse of savePurchase                                                |
-| POST /api/v1/purchasing/:id/receive | purchase.receive; atomic receive + automatic missing bills                                        |
-| POST /api/v1/purchasing/:id/pay     | payable.manage; current bill balances, full/partial allocation, journal/audit                     |
-| GET /api/v1/money                   | finance.read; same RLS/membership/industry boundaries and bounded date contract                   |
+## Verification
 
-All mutations use POST, validation, write idempotency and audit. No CORS method broadening. OpenAPI publishes the new purchase command schemas. Existing default-only category command retries preserve their pre-upgrade payload fingerprint.
+| Check                                        | Result                                                                                                                                                                                                                                                |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`                                 | Passed: root/web/mobile types, ESLint, 46-module import boundaries and 9 domain/offline-queue tests.                                                                                                                                                  |
+| `pnpm test:integration`                      | Passed: 57 database tests (including 11 new B–D scenarios).                                                                                                                                                                                           |
+| `pnpm test:review`                           | Passed: 6 existing review regressions.                                                                                                                                                                                                                |
+| `pnpm test:http`                             | Passed: all 5 real-session HTTP suites, including waiter/kitchen/reception/housekeeping.                                                                                                                                                              |
+| `pnpm build`                                 | Passed: production web compilation, types and page generation.                                                                                                                                                                                        |
+| `node scripts/hospitality-browser-smoke.mjs` | Passed: variant opening quantity/cost, supplier/product/quantity reorder prefill, expiry home alerts, booking/deposit/partial checkout and named extras, housekeeping, kitchen/payment, French persistence, 390px layout and restricted worker views. |
+| `node scripts/core-browser-smoke.mjs`        | Passed: existing purchase/receipt/payment, Money/equipment, invoice/payment, refresh, French, phone and role-denial flows.                                                                                                                            |
+| `pnpm format:check`, `git diff --check`      | Passed.                                                                                                                                                                                                                                               |
 
-## Database migrations
+Total across the requested test suites: **77 tests passed**, none skipped or disabled. The final itemized guest-bill change was additionally checked with all 11 B–D database scenarios and the browser flow. Browser checks use local Chromium and phone/tablet viewports, not a physical Windows or native mobile device. The generated Prisma client matches the current schema/installed version. SQL migrations were applied to the local development database; no production deployment was performed.
 
-| Migration                                                      | Changes                                                                                                                                                                | Safety                                                                                      |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| prisma/migrations/202611040005_spending_kinds/migration.sql    | category kind/system_key + checks/partial unique key; expense posting_account snapshot + allowlist; defaults for existing businesses                                   | Additive, existing journal/expense meanings remain; no data reset, table or column deletion |
-| prisma/migrations/202611040006_spending_defaults/migration.sql | AFTER INSERT business trigger creates reference categories for future businesses; fixed-search-path SECURITY DEFINER function, PUBLIC/runtime direct execution revoked | Additive; no new grants on business data, no replacement RLS policies                       |
+An earlier HTTP run was interrupted by the API development watcher restarting during an edit. The complete rerun against stable source passed. Browser checks also exposed asynchronous product-option loading in the test: the assertion now waits for the controlled select to receive its options rather than checking before the catalog response.
 
-Existing 16 migration files are untouched. No new sales/inventory/payments tables. Existing memberships and seven role templates remain; no waiter/kitchen/receptionist/housekeeping role or permission constraint changes occurred in A.
-
-## Accounting assumptions needing business approval
-
-| Assumption                                                | Current status                                                                                                                                                                                   |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Equipment is an asset, with no depreciation               | Implemented A: 1500 Equipment. Review classification/policy before production. No retroactive reclassification of past expense journals.                                                         |
-| Restaurant stock changes at payment                       | Existing behavior preserved; Phase C must retain/extend it atomically for recipes.                                                                                                               |
-| Hotel revenue at checkout and deposits held until billing | **Not implemented**; proposed Phase D policy needs approval. Existing stay creation still posts nothing.                                                                                         |
-| VAT                                                       | Not configured/added. No invented rate; Phase B must establish reviewed rate, receipt and journal treatment.                                                                                     |
-| Posting dates / cash                                      | Existing posting-date model preserved. Costs/bills/invoice issuance use today's business date. Cash view is recorded business-cash movement, not proof of provider settlement or drawer balance. |
-
-## Limitations and exact stop
-
-Next phase is **B: variants, optional batch/expiry/FEFO, expired-sale blocking, supplier-linked reorder and VAT policy review**. Product/category profit visibility has been exposed from existing reports, but B is not otherwise implemented. C waiter/kitchen/lifecycle/recipes and D stay finance/deposits/checkout/cleaning/room-charge linkage are wholly pending. The manual checklist labels their desired scenarios blocked instead of claiming they passed.
-
-Other industries' advanced features, bar tabs, serving-unit recipes, advanced fast-food modes, rate plans, folio splitting, depreciation, custom dashboard editors, guided tours, fully localized legacy expert panels, large-history pagination/exports, native-device/hardware QA and production deployment are deferred. This phase localizes its new normal-worker screens; existing expert/legacy panels retain prior copy and capabilities.
-
-Source lists/date filters are real, not mocked. Some legacy pickers are bounded to 100 products and historical Money queries currently load source rows in-process; large-data pagination/query tuning remains required. Default categories are added without renaming/reclassifying existing custom categories, so an old custom category named Equipment should be reviewed for its intended kind. Received goods, not unreceived PO totals, determine the amount available to pay.
-
-## Checkpoint validation
-
-Baseline pnpm check passed before feature edits (9 domain/offline tests, API/web/mobile typechecks, lint and boundaries). During development, initial browser/type issues (a Next module-extension import, persisted-locale race, missing required payment account in test input, asynchronous UI refresh assertion) were diagnosed and corrected; no assertion was disabled or replaced with a trivial passing check.
-
-| Command                             | Outcome                                                                                                                                                                                                                                                                                                        |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Baseline pnpm check                 | Passed before feature changes: typechecks/lint/boundaries + 9 tests                                                                                                                                                                                                                                            |
-| pnpm db:generate                    | Passed for the additive schema using the installed package’s bundled schema path; no checksum/TLS verification disabled                                                                                                                                                                                        |
-| pnpm db:migrate                     | Applied 202611040005 and 202611040006 to the isolated development database; existing migrations unchanged                                                                                                                                                                                                      |
-| pnpm check                          | Passed: API/shared/web/mobile typechecks, lint, boundary check and 9 domain/offline tests                                                                                                                                                                                                                      |
-| pnpm test:integration               | **46 passed**: all 35 previous tests + 11 new Phase A tests, no skipped/disabled tests                                                                                                                                                                                                                         |
-| pnpm test:review                    | **6 passed**, including original restaurant/accommodation/offline/document/team behavior                                                                                                                                                                                                                       |
-| pnpm test:http                      | **4 passed**, including original auth/MFA/offline contracts and new purchase/auto-bill/payment assertions; real rate limiter retained                                                                                                                                                                          |
-| pnpm build                          | Passed: Webpack compilation, TypeScript, static generation and tracing                                                                                                                                                                                                                                         |
-| node scripts/core-browser-smoke.mjs | Passed: inline purchase/order, partial/full receive with auto-bill, partial/full pay, populated en/fr refresh, equipment cost/Money, existing invoice partial payment, original expert branch/previous-period reports, 390px phone overflow, cashier direct-page denial and inventory finance-button exclusion |
-| pnpm format:check                   | Final formatting outcome verified after documentation generation                                                                                                                                                                                                                                               |
-| git diff --check                    | Passed                                                                                                                                                                                                                                                                                                         |
-
-**65 automated tests passed** (9 + 46 + 6 + 4), plus real browser scenarios and production build. Human/native-device scenarios and B/C/D acceptance tests are not claimed as executed or passed. PostgreSQL is the retained isolated local development instance; no production data was reset. The build check was repeated after the explicit stock-loss figure needed to reconcile profit was added.
-
-For an existing local installation, retain your .env and Docker database volume. Refresh dependencies, run pnpm db:generate and pnpm db:migrate, then pnpm dev. No database reset/reseed is required for these additive changes. Node >=24 is still required. Git publication, if performed, is identified in the final chat response; production deployment is separate.
-
-See INDUSTRY_WORKSPACE_FILE_CHANGES.md for Created/Modified/Migrations/Tests/High-risk inventory and INDUSTRY_WORKSPACE_MANUAL_CHECKLIST.md for short real/blocked scenarios. No live provider delivery or production deployment was performed. The requested specialist-worker definition of done is not met until B–D are completed.
+See [file inventory](INDUSTRY_WORKSPACE_FILE_CHANGES.md), [manual scenarios](INDUSTRY_WORKSPACE_MANUAL_CHECKLIST.md) and [historical baseline](INDUSTRY_WORKSPACE_BASELINE.md).

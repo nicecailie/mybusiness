@@ -3678,3 +3678,89 @@ fieldset:disabled select {
     margin: 8px 0;
   }
 }
+
+.operation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.operation-card,
+.operation-entry {
+  padding: 20px;
+  min-width: 0;
+}
+.operation-entry {
+  margin: 16px 0;
+}
+.operation-entry fieldset,
+.operation-card fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.operation-entry form,
+.operation-card form {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.operation-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  width: 100%;
+}
+.operation-line > * {
+  flex: 1;
+  min-width: 100px;
+}
+.operation-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  max-height: 240px;
+  overflow: auto;
+}
+.operation-card input,
+.operation-entry input,
+.operation-card select,
+.operation-entry select {
+  max-width: 100%;
+}
+.operation-entry .field,
+.operation-card .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 100px;
+  flex: 1;
+}
+.operation-card ul {
+  padding-left: 20px;
+}
+
+.operation-card[data-status='available'] {
+  border-top: 4px solid #167a53;
+}
+.operation-card[data-status='reserved'] {
+  border-top: 4px solid #b28a15;
+}
+.operation-card[data-status='in_use'] {
+  border-top: 4px solid #3473b4;
+}
+.operation-card[data-status='needs_cleaning'],
+.operation-card[data-status='cleaning'] {
+  border-top: 4px solid #ce7219;
+}
+.operation-card[data-status='under_repair'] {
+  border-top: 4px solid #ac3e46;
+}

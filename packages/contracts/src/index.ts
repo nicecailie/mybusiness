@@ -58,11 +58,15 @@ export const productSchema = z
     lowStock: nonnegativeQuantitySchema.default(5),
     type: z.enum(['goods', 'service']).default('goods'),
     initialQuantity: nonnegativeQuantitySchema.optional(),
+    vatBps: z.number().int().min(0).max(10000).optional(),
+    batchTracked: z.boolean().optional(),
+    expiresOn: z.string().date().optional(),
     initialReason: z.string().trim().min(3).max(300).optional(),
   })
   .strict();
 export const receiveSchema = z
   .object({
+    expiresOn: z.string().date().optional(),
     productId: idSchema,
     quantity: quantitySchema,
     unitCost: moneySchema,
@@ -237,7 +241,17 @@ export type ReturnInput = z.infer<typeof returnSchema>;
 export type ReceiveInput = z.infer<typeof receiveSchema>;
 export type CustomerInput = z.infer<typeof customerSchema>;
 export type Role =
-  'owner' | 'manager' | 'cashier' | 'inventory' | 'accountant' | 'viewer' | 'purchasing';
+  | 'owner'
+  | 'manager'
+  | 'cashier'
+  | 'inventory'
+  | 'accountant'
+  | 'viewer'
+  | 'purchasing'
+  | 'waiter'
+  | 'kitchen'
+  | 'receptionist'
+  | 'housekeeping';
 export type Permission =
   | 'business.manage'
   | 'catalog.read'
@@ -269,7 +283,15 @@ export type Permission =
   | 'finance.read'
   | 'stock.transfer'
   | 'stock.count'
-  | 'team.update';
+  | 'team.update'
+  | 'restaurant.read'
+  | 'restaurant.order'
+  | 'restaurant.prepare'
+  | 'restaurant.pay'
+  | 'hotel.read'
+  | 'hotel.book'
+  | 'hotel.checkout'
+  | 'hotel.clean';
 export interface Scope {
   userId: string;
   tenantId: string;
@@ -291,6 +313,12 @@ export interface Product {
   lowStock: number;
   archived: boolean;
   offlineProof?: string;
+  parentId?: string | null;
+  variantLabel?: string | null;
+  recipe?: { productId: string; quantity: number }[];
+  isGroup?: boolean;
+  batchTracked?: boolean;
+  vatBps?: number;
 }
 export interface Customer {
   id: string;
@@ -322,6 +350,7 @@ export interface ReceiptLine {
   returned: number;
 }
 export interface Receipt {
+  tax?: string;
   offline?: boolean;
   syncedAt?: string;
   reviewRequired?: boolean;
@@ -384,6 +413,7 @@ export interface ApiError {
 
 // Local storage and SQLite are untrusted boundaries too. Empty tender is valid only for a draft.
 export const cachedProductSchema = z.object({
+  batchTracked: z.boolean().optional(),
   id: idSchema,
   name: z.string().max(160),
   sku: z.string().max(60),

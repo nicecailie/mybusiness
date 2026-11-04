@@ -6,6 +6,8 @@ const json = (v: unknown): Prisma.JsonValue => JSON.parse(JSON.stringify(v)) as 
 export const moneyOverview = (s: Scope, from: string, to: string) =>
   scoped(s, 'finance.read', async (tx, a) => {
     const report = (await financialReportInTransaction(tx, a, from, to)) as {
+      restaurantRevenue: string;
+      accommodationRevenue: string;
       revenue: string;
       cogs: string;
       grossProfit: string;
@@ -117,7 +119,10 @@ export const moneyOverview = (s: Scope, from: string, to: string) =>
         runningCosts: report.expenses,
         stockLoss: report.stockLoss,
         profitAfterCosts: report.netOperatingProfit,
-        customersOwe: balance('1300').toString(),
+        customersOwe: (balance('1300') + balance('1400')).toString(),
+        restaurantRevenue: report.restaurantRevenue,
+        accommodationRevenue: report.accommodationRevenue,
+        guestDepositsHeld: (-balance('2300')).toString(),
         suppliersOwed: (-balance('2000') - balance('2100')).toString(),
         stockValue: report.inventoryValue,
         cashIn: cash?.debit ?? '0',

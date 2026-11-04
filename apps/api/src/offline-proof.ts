@@ -12,6 +12,7 @@ const proofSchema = z.object({
   name: z.string(),
   sku: z.string(),
   price: z.string(),
+  vatBps: z.number().int().optional(),
   onHand: z.number(),
   capturedAt: z.string(),
 });
@@ -31,6 +32,7 @@ export function catalogProof(s: Scope, deviceId: string, p: Product, capturedAt:
       name: p.name,
       sku: p.sku,
       price: p.price,
+      vatBps: p.vatBps ?? 0,
       onHand: p.onHand,
       capturedAt,
     }),
@@ -41,7 +43,7 @@ export function verifyCatalogProof(
   s: Scope,
   input: OfflineSaleInput,
   line: OfflineSaleInput['lines'][number],
-): void {
+): number {
   try {
     const [payload, signature] = line.catalogProof.split('.');
     if (!payload || !signature) throw new Error();
@@ -64,6 +66,7 @@ export function verifyCatalogProof(
       line.discount !== '0'
     )
       throw new Error();
+    return proof.vatBps ?? 0;
   } catch {
     throw new DomainError(
       'OFFLINE_CATALOG_REVIEW',

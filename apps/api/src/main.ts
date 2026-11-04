@@ -1,3 +1,28 @@
+import { chargeGuests, stayBill } from './hotel.js';
+import {
+  bookingSchema,
+  bookStay,
+  hotelBoard,
+  guestPaymentSchema,
+  takeDeposit,
+  stayAction,
+  checkoutSchema,
+  checkoutStay,
+  payStay,
+  housekeeping,
+  cleanRoom,
+  repairRoom,
+  roomCharge,
+} from './hotel.js';
+import { kitchenQueue, transitionOrder, appendOrder } from './restaurant.js';
+import {
+  variants,
+  variantsSchema,
+  saveRecipe,
+  recipeSchema,
+  expiryDashboard,
+  reorderSuggestion,
+} from './retail.js';
 import * as purchasing from './purchasing.js';
 import { moneyOverview } from './money.js';
 import * as core from './core.js';
@@ -71,9 +96,7 @@ import {
   getDocument,
   staff,
   addStaff,
-  rooms,
   addRoom,
-  addStay,
 } from './business.js';
 import { activatePendingBusiness, provisionBusiness } from './onboarding.js';
 
@@ -364,6 +387,26 @@ class ApiController {
   @Post('onboarding/activate') async activate(@Req() req: Request) {
     return activatePendingBusiness(await user(req));
   }
+  @Get('stock/expiry') async expiry(@Req() req: Request) {
+    return expiryDashboard(await scope(req));
+  }
+  @Get('products/:id/reorder') async reorder(@Req() req: Request, @Param('id') id: string) {
+    return reorderSuggestion(await scope(req), c.idSchema.parse(id));
+  }
+  @Post('products/:id/variants') async variants(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return variants(await scope(req), key(req), c.idSchema.parse(id), variantsSchema.parse(body));
+  }
+  @Post('products/:id/recipe') async recipe(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return saveRecipe(await scope(req), key(req), c.idSchema.parse(id), recipeSchema.parse(body));
+  }
   @Get('products') async products(@Req() req: Request, @Query() query: unknown) {
     const q = c.pageSchema.parse(query);
     return products(
@@ -485,11 +528,47 @@ class ApiController {
           name: z.string().trim().min(2).max(160),
           email: z.email().max(254),
           password: z.string().min(12).max(128),
-          role: z.enum(['manager', 'cashier', 'inventory', 'purchasing', 'accountant', 'viewer']),
+          role: z.enum([
+            'manager',
+            'cashier',
+            'inventory',
+            'purchasing',
+            'accountant',
+            'viewer',
+            'waiter',
+            'kitchen',
+            'receptionist',
+            'housekeeping',
+          ]),
         })
         .strict()
         .parse(body),
     );
+  }
+  @Get('restaurant/kitchen') async kitchen(@Req() req: Request) {
+    return kitchenQueue(await scope(req));
+  }
+  @Post('restaurant/orders/:id/status') async orderStatus(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return transitionOrder(
+      await scope(req),
+      key(req),
+      c.idSchema.parse(id),
+      z
+        .object({ status: z.enum(['preparing', 'ready', 'served', 'cancelled']) })
+        .strict()
+        .parse(body).status,
+    );
+  }
+  @Post('restaurant/orders/:id/items') async orderItems(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return appendOrder(await scope(req), key(req), c.idSchema.parse(id), orderSchema.parse(body));
   }
   @Get('restaurant') async restaurant(@Req() req: Request) {
     return restaurantDashboard(await scope(req));
@@ -519,8 +598,17 @@ class ApiController {
       orderPaymentSchema.parse(body),
     );
   }
+  @Get('restaurant/charge-guests') async chargeGuests(@Req() req: Request) {
+    return chargeGuests(await scope(req));
+  }
+  @Get('accommodation/stays/:id/bill') async stayBill(
+    @Req() req: Request,
+    @Param('id') id: string,
+  ) {
+    return stayBill(await scope(req), c.idSchema.parse(id));
+  }
   @Get('accommodation') async rooms(@Req() req: Request) {
-    return rooms(await scope(req));
+    return hotelBoard(await scope(req));
   }
   @Post('accommodation/rooms') async room(@Req() req: Request, @Body() body: unknown) {
     return addRoom(
@@ -536,18 +624,99 @@ class ApiController {
     );
   }
   @Post('accommodation/stays') async stay(@Req() req: Request, @Body() body: unknown) {
-    return addStay(
+    return bookStay(await scope(req), key(req), bookingSchema.parse(body));
+  }
+  @Post('accommodation/stays/:id/deposit') async deposit(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return takeDeposit(
       await scope(req),
       key(req),
+      c.idSchema.parse(id),
+      guestPaymentSchema.parse(body),
+    );
+  }
+  @Post('accommodation/stays/:id/action') async stayAction(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return stayAction(
+      await scope(req),
+      key(req),
+      c.idSchema.parse(id),
       z
-        .object({
-          roomId: c.idSchema,
-          customerId: c.idSchema,
-          checkIn: z.iso.date(),
-          checkOut: z.iso.date(),
-        })
+        .object({ action: z.enum(['check_in', 'cancelled', 'no_show']) })
         .strict()
-        .parse(body),
+        .parse(body).action,
+    );
+  }
+  @Post('accommodation/stays/:id/checkout') async checkout(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return checkoutStay(
+      await scope(req),
+      key(req),
+      c.idSchema.parse(id),
+      checkoutSchema.parse(body),
+    );
+  }
+  @Post('accommodation/stays/:id/payment') async stayPayment(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return payStay(
+      await scope(req),
+      key(req),
+      c.idSchema.parse(id),
+      guestPaymentSchema.parse(body),
+    );
+  }
+  @Get('accommodation/housekeeping') async housekeeping(@Req() req: Request) {
+    return housekeeping(await scope(req));
+  }
+  @Post('accommodation/rooms/:id/clean') async roomClean(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return cleanRoom(
+      await scope(req),
+      key(req),
+      c.idSchema.parse(id),
+      z
+        .object({ status: z.enum(['cleaning', 'available']) })
+        .strict()
+        .parse(body).status,
+    );
+  }
+  @Post('accommodation/rooms/:id/repair') async roomRepair(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return repairRoom(
+      await scope(req),
+      key(req),
+      c.idSchema.parse(id),
+      z.object({ repair: z.boolean() }).strict().parse(body).repair,
+    );
+  }
+  @Post('restaurant/orders/:id/room-charge') async roomCharge(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return roomCharge(
+      await scope(req),
+      key(req),
+      c.idSchema.parse(id),
+      z.object({ stayId: c.idSchema }).strict().parse(body).stayId,
     );
   }
   @Get('stock/movements') async movements(@Req() req: Request, @Query() query: unknown) {

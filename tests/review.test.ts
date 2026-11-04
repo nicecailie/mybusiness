@@ -36,6 +36,7 @@ import { provisionBusiness } from '../apps/api/src/onboarding.js';
 import {
   addTable,
   createOrder,
+  transitionOrder,
   payOrder,
   restaurantDashboard,
 } from '../apps/api/src/restaurant.js';
@@ -493,6 +494,8 @@ void test('restaurant records food/drink, unpaid tables and atomically posts pai
       reference: 'IHELA-123',
     },
   };
+  await transitionOrder(a, key(), order.id, 'preparing');
+  await transitionOrder(a, key(), order.id, 'ready');
   const [paid, retry] = await Promise.all([
     payOrder(a, key(), order.id, input),
     payOrder(a, key(), order.id, input),

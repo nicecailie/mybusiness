@@ -1,5 +1,7 @@
 # Industry workspace baseline
 
+This document records the **pre-Phase-A baseline**, not current capability. Phase A shipped in `273027b`; B–D are described in [the current implementation report](INDUSTRY_WORKSPACE_IMPLEMENTATION_REPORT.md). The B–D continuation started from a clean Git state at `273027b`. Historical Missing/Partial classifications below are intentionally preserved for comparison.
+
 Captured before implementation on 4 November 2026, from source at commit 0d44133. Git status was clean. Read context.md, requirements.md, web AGENTS.md and Core Completion documentation; source code governs discrepancies. Original Core Completion file inventory is historical, not a list of files created by this phase.
 
 ## Industry inventory: current versus target

@@ -1,3 +1,4 @@
+import { operationsMessages } from '../../../packages/i18n/src/index';
 import { cashDraftSchema, offlineSaleSchema } from '../../../packages/contracts/src/index';
 import tokens from '../../../packages/design-tokens/tokens.json';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -311,6 +312,11 @@ function Main() {
               <Text style={styles.title}>{t('total')}</Text>
               <Text style={styles.title}>{money(selectedReceipt.total, locale)}</Text>
             </View>
+            {selectedReceipt.tax && BigInt(selectedReceipt.tax) > 0n && (
+              <Text>
+                {operationsMessages[locale].tax}: {money(selectedReceipt.tax, locale)}
+              </Text>
+            )}
             <Text>
               {t('tendered')}: {money(selectedReceipt.tendered, locale)}
             </Text>
@@ -716,6 +722,7 @@ function NativePOS({
         const lines = draft.lines.map((l) => {
           const p = map.get(l.productId);
           if (!p) throw new Error('A product needs to be downloaded first.');
+          if (p.batchTracked) throw new Error(operationsMessages[locale].batchOnline);
           if (p.type === 'goods' && l.quantity > Math.max(0, p.onHand)) {
             if (reason.trim().length < 3)
               throw new Error('Explain selling beyond the estimated stock.');

@@ -1,4 +1,5 @@
 'use client';
+import { RestaurantWorkspace, HotelWorkspace, RetailTools } from './operations';
 import { PurchasingWorkspace } from './purchasing-workspace';
 import { MoneyWorkspace, SpendingWorkspace } from './money-workspace';
 import { IndustryHome } from './industry-home';
@@ -49,13 +50,7 @@ import {
 } from '../../../packages/domain/src/industries';
 import { money, workspaceMessages, type Locale } from '../../../packages/i18n/src/index';
 
-import {
-  BusinessAdmin,
-  TeamPanel,
-  ReconciliationPanel,
-  AccommodationPanel,
-  RestaurantPanel,
-} from './review-panels';
+import { BusinessAdmin, TeamPanel, ReconciliationPanel } from './review-panels';
 import { MutationForm } from './forms';
 import { SecuritySettings } from './security-settings';
 import { PointOfSale, ReceiptModal } from './pos';
@@ -262,6 +257,10 @@ export function WorkspacePage({
   );
   const pageAccess: Partial<Record<Page, [Permission, IndustryModule]>> = {
     money: ['finance.read', 'accounting'],
+    orders: ['restaurant.read', 'restaurant'],
+    kitchen: ['restaurant.prepare', 'restaurant'],
+    rooms: ['hotel.read', 'accommodation'],
+    housekeeping: ['hotel.clean', 'accommodation'],
     stock: ['stock.receive', 'inventory'],
     purchases: ['purchase.read', 'purchasing'],
     expenses: ['expense.read', 'accounting'],
@@ -281,8 +280,33 @@ export function WorkspacePage({
         <Empty icon={ShieldCheck} title={workspaceMessages[locale].denied} hint="" />
       </section>
     );
+  } else if (page === 'orders' || page === 'kitchen') {
+    content = (
+      <RestaurantWorkspace
+        context={context}
+        locale={locale}
+        kitchen={page === 'kitchen'}
+        onReceipt={setReceiptId}
+        onOpenRegister={() => setForm('open')}
+      />
+    );
+  } else if (page === 'rooms' || page === 'housekeeping') {
+    content = (
+      <HotelWorkspace context={context} locale={locale} cleaning={page === 'housekeeping'} />
+    );
   } else if (page === 'overview') {
-    content = <IndustryHome context={context} locale={locale} navigate={navigate} />;
+    content =
+      context.role === 'kitchen' ? (
+        <RestaurantWorkspace context={context} locale={locale} kitchen />
+      ) : context.role === 'waiter' ? (
+        <RestaurantWorkspace context={context} locale={locale} />
+      ) : context.role === 'housekeeping' ? (
+        <HotelWorkspace context={context} locale={locale} cleaning />
+      ) : context.role === 'receptionist' ? (
+        <HotelWorkspace context={context} locale={locale} />
+      ) : (
+        <IndustryHome context={context} locale={locale} navigate={navigate} />
+      );
   } else if (page === 'money') {
     content = <MoneyWorkspace context={context} locale={locale} />;
   } else if (page === 'stock') {
@@ -905,20 +929,6 @@ export function WorkspacePage({
     );
   return (
     <>
-      {page === 'overview' &&
-        context.industryId &&
-        ['restaurant', 'bar_pub', 'fast_food'].includes(context.industryId) && (
-          <RestaurantPanel context={context} locale={locale} onReceipt={setReceiptId} />
-        )}
-      {page === 'overview' &&
-        context.industryId &&
-        hasEffectiveModule(context.industryId, 'accommodation') && (
-          <AccommodationPanel
-            context={context}
-            locale={locale}
-            onGuest={() => setForm('customer')}
-          />
-        )}
       {['overview', 'reports'].includes(page) && !!report.data?.unverifiedPayments && (
         <p className="notice">
           {report.data.unverifiedPayments}{' '}
@@ -935,6 +945,9 @@ export function WorkspacePage({
         </p>
       )}
       {content}
+      {['products', 'stock'].includes(page) && can(context.role, 'catalog.read') && (
+        <RetailTools context={context} locale={locale} navigate={navigate} />
+      )}
       {page === 'reports' && allowed('finance.read', 'accounting') && (
         <FinancialPanel context={context} from={from} to={to} />
       )}

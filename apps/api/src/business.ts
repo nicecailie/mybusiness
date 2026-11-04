@@ -1,9 +1,10 @@
+import { bookStay, hotelBoard } from './hotel.js';
 import { randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import type { Scope } from '../../../packages/contracts/src/index.js';
 import { documentSchema, businessDetailsSchema } from '../../../packages/contracts/src/index.js';
 import { audit, scoped, write, ownership } from './database.js';
-import { DomainError, stayNights } from '../../../packages/domain/src/index.js';
+import { DomainError } from '../../../packages/domain/src/index.js';
 import { hasEffectiveModule } from '../../../packages/domain/src/industries.js';
 
 export const businessDetails = (s: Scope) =>
@@ -117,33 +118,7 @@ async function accommodation(tx: Parameters<Parameters<typeof scoped>[2]>[0], s:
       404,
     );
 }
-export const rooms = (s: Scope) =>
-  scoped(s, 'report.read', async (tx, a) => {
-    await accommodation(tx, a);
-    const today = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Africa/Bujumbura',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
-    const rooms = await tx.room.findMany({ orderBy: { name: 'asc' } }),
-      stays = await tx.stay.findMany({ orderBy: { checkIn: 'desc' } }),
-      customers = await tx.customer.findMany();
-    return {
-      rooms: rooms.map((r) => ({
-        ...r,
-        rate: r.rate.toString(),
-        occupied: stays.some((s) => s.roomId === r.id && s.checkIn <= today && s.checkOut > today),
-      })),
-      stays: stays.map((s) => ({
-        ...s,
-        rate: s.rate.toString(),
-        total: s.total.toString(),
-        guest: customers.find((c) => c.id === s.customerId)?.name,
-      })),
-      customers,
-    };
-  });
+export const rooms = hotelBoard;
 export const addRoom = (s: Scope, key: string, input: { name: string; rate: string }) =>
   write(s, 'business.manage', 'room.create', key, input, async (tx, a) => {
     await accommodation(tx, a);
@@ -156,34 +131,4 @@ export const addStay = (
   s: Scope,
   key: string,
   input: { roomId: string; customerId: string; checkIn: string; checkOut: string },
-) =>
-  write(s, 'sale.create', 'stay.create', key, input, async (tx, a) => {
-    await accommodation(tx, a);
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'room:' + input.roomId},0))`;
-    const room = await tx.room.findFirst({ where: { id: input.roomId } }),
-      customer = await tx.customer.findFirst({ where: { id: input.customerId, archived: false } });
-    if (!room || !customer)
-      throw new DomainError('NOT_FOUND', 'Select a room and a guest in this business.', 404);
-    const nights = stayNights(input.checkIn, input.checkOut);
-    if (
-      await tx.stay.findFirst({
-        where: {
-          roomId: room.id,
-          checkIn: { lt: input.checkOut },
-          checkOut: { gt: input.checkIn },
-        },
-      })
-    )
-      throw new DomainError(
-        'ROOM_UNAVAILABLE',
-        'This room is already occupied for part of the stay.',
-        409,
-      );
-    const id = randomUUID(),
-      total = (BigInt(room.rate.toString()) * BigInt(nights)).toString();
-    await tx.stay.create({
-      data: { id, ...ownership(a), ...input, nights, rate: room.rate, total, actorId: a.userId },
-    });
-    await audit(tx, a, 'stay.created', id);
-    return { id, nights, total };
-  });
+) => bookStay(s, key, { ...input, guestCount: 1 });

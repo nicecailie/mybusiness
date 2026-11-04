@@ -6,7 +6,7 @@ import { useContext, useEffect, useState, type FormEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { CashSession, Context, Product } from '../../../packages/contracts/src/index';
-import { money } from '../../../packages/i18n/src/index';
+import { operationsMessages, money } from '../../../packages/i18n/src/index';
 
 import { Brand, ErrorText, Field, Language, Modal, request, useT, useWrite } from './ui';
 export function MutationForm({
@@ -68,6 +68,10 @@ export function MutationForm({
           : {}),
         lowStock: Number(v('lowStock')),
         type: v('type'),
+        vatBps: Math.round(Number(v('vat')) * 100),
+        ...(!product
+          ? { batchTracked: v('batchTracked') === 'on', expiresOn: v('expiresOn') || undefined }
+          : {}),
       });
     if (kind === 'customer')
       void submit('v1/customers', {
@@ -78,6 +82,7 @@ export function MutationForm({
     if (kind === 'stock')
       void submit('v1/stock/opening', {
         productId: v('productId'),
+        expiresOn: v('expiresOn') || undefined,
         quantity: Number(v('quantity')),
         unitCost: v('unitCost') || '0',
         direction: v('direction'),
@@ -110,6 +115,33 @@ export function MutationForm({
       onClose={onClose}
     >
       <form onSubmit={handle} onChange={changed} className="form">
+        {(kind === 'product' || kind === 'stock') && (
+          <>
+            {kind === 'product' && (
+              <>
+                <Field label={operationsMessages[language].vat} name="vat">
+                  <input
+                    name="vat"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    defaultValue={(product?.vatBps ?? 0) / 100}
+                  />
+                </Field>
+                {!product && (
+                  <Field label={operationsMessages[language].batchTracking} name="batchTracked">
+                    <input name="batchTracked" type="checkbox" />
+                  </Field>
+                )}
+              </>
+            )}
+            <Field label={operationsMessages[language].expiry} name="expiresOn">
+              <input name="expiresOn" type="date" />
+            </Field>
+          </>
+        )}
+
         <ErrorText error={error || loadError} />
         <fieldset disabled={busy || uncertain}>
           {kind === 'product' && (

@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit && pnpm --filter @mybusiness/web typecheck && pnpm --filter @mybusiness/mobile typecheck",
     "test": "tsx --test tests/domain.test.ts tests/offline-queue.test.ts",
     "test:review": "tsx --test --test-concurrency=1 tests/review.test.ts",
-    "test:integration": "tsx --test --test-concurrency=1 tests/integration.test.ts tests/core-completion.test.ts tests/industry-workspace.test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 tests/integration.test.ts tests/core-completion.test.ts tests/industry-workspace.test.ts tests/hospitality.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",

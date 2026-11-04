@@ -1,5 +1,6 @@
+import { changeBatches, includedTax } from './stock-lots.js';
 import { randomUUID } from 'node:crypto';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import type { Scope } from '../../../packages/contracts/src/index.js';
 import * as c from '../../../packages/contracts/src/core.js';
@@ -74,6 +75,7 @@ export async function moveStock(
   sourceId: string,
   reason: string,
   incomingValue?: bigint,
+  expiresOn?: string,
 ) {
   const p = await tx.product.findFirst({
     where: { id: productId, archived: false, type: 'goods' },
@@ -91,6 +93,30 @@ export async function moveStock(
     quantity < 0 ? -allocatedCost(b!.value.toString(), -quantity, available) : incomingValue;
   if (value === undefined || (quantity > 0 && value < 0n))
     throw conflict('A reviewed incoming stock value is required.');
+  if (p.batchTracked && sourceType === 'transfer_in') {
+    const line = await tx.stockTransferLine.findFirst({
+      where: { transferId: sourceId, productId },
+    });
+    const lots = z
+      .array(z.object({ expiresOn: z.string(), quantity: z.number() }))
+      .parse(line?.batchLots);
+    if (lots.reduce((n, l) => n + quantityUnits(l.quantity), 0n) !== quantityUnits(quantity))
+      throw conflict('Transfer batch quantities do not match.');
+    for (const l of lots) await changeBatches(tx, s, p, l.quantity, l.expiresOn);
+  } else {
+    const lots = await changeBatches(tx, s, p, quantity, expiresOn, sourceType === 'stock_count');
+    if (p.batchTracked && sourceType === 'transfer_out') {
+      const snapshot = [];
+      for (const l of lots) {
+        const b = await tx.stockBatch.findUniqueOrThrow({ where: { id: l.id } });
+        snapshot.push({ expiresOn: b.expiresOn, quantity: l.quantity });
+      }
+      await tx.stockTransferLine.updateMany({
+        where: { transferId: sourceId, productId },
+        data: { batchLots: snapshot },
+      });
+    }
+  }
   if (b)
     await tx.stockBalance.update({
       where: { id: b.id },
@@ -344,6 +370,7 @@ export async function receivePurchaseInTransaction(
       receiptId,
       'Purchase goods receipt',
       value,
+      item.expiresOn,
     );
     await tx.purchaseLine.update({
       where: { id: l.id },
@@ -464,7 +491,9 @@ export function settle(
 export async function settleInTransaction(
   tx: Transaction,
   a: Scope,
-  data: z.infer<typeof c.settlementSchema>,
+  data: Omit<z.infer<typeof c.settlementSchema>, 'account'> & {
+    account: '1000 Cash' | '1010 Bank' | '2300 Guest deposits';
+  },
   id: string,
   kind: 'bill' | 'invoice',
 ) {
@@ -605,112 +634,151 @@ export const invoiceDetail = (s: Scope, id: string) =>
   });
 export function createInvoice(s: Scope, key: string, input: unknown) {
   const data = c.invoiceSchema.parse(input);
-  return write(s, 'invoice.create', 'invoice.create', key, data, async (tx, a) => {
-    if (!(await tx.customer.findFirst({ where: { id: data.customerId, archived: false } })))
-      throw missing();
-    const id = randomUUID();
-    let total = 0n;
-    const lines = [];
-    if (data.saleId) {
-      const sale = await tx.sale.findFirst({
-        where: { id: data.saleId, customerId: data.customerId },
-      });
-      if (!sale) throw missing();
-      const payment = await tx.payment.findFirst({
-        where: { saleId: sale.id, direction: 'in', status: 'confirmed' },
-      });
-      if (!payment) throw conflict('Only a confirmed fully paid sale can be linked.');
-      total = BigInt(sale.total.toString());
-      if (await tx.return.findFirst({ where: { saleId: sale.id } }))
-        throw conflict('A returned sale cannot be linked to a new invoice.');
-      const original = await tx.saleLine.findMany({ where: { saleId: sale.id } });
-      for (const l of original) {
-        if (l.discount.toString() !== '0')
-          throw conflict('Discounted receipts remain the original sale document.');
-        lines.push({
-          productId: l.productId,
-          name: l.name,
-          quantity: Number(l.quantity),
-          unitPrice: l.unitPrice.toString(),
-          total: l.total.toString(),
-        });
-      }
-    } else
-      for (const l of data.lines) {
-        const p = await tx.product.findFirst({ where: { id: l.productId, archived: false } });
-        if (!p) throw missing();
-        const value = lineAmount(l.unitPrice, l.quantity);
-        total += value;
-        lines.push({ ...l, name: p.name, total: value.toString() });
-      }
-    if (total <= 0n || total > 999999999999999n)
-      throw conflict('Invoice total is outside the supported range.');
-    await tx.invoice.create({
-      data: {
-        id,
-        ...ownership(a),
-        customerId: data.customerId,
-        saleId: data.saleId,
-        invoiceDate: data.invoiceDate,
-        dueDate: data.dueDate,
-        notes: data.notes,
-        number: await number(tx, 'INV'),
-        total: total.toString(),
-        paid: data.saleId ? total.toString() : '0',
-        status: data.saleId ? 'issued' : 'draft',
-        actorId: a.userId,
-      },
+  return write(s, 'invoice.create', 'invoice.create', key, data, (tx, a) =>
+    createInvoiceInTransaction(tx, a, data),
+  );
+}
+export async function createInvoiceInTransaction(
+  tx: Transaction,
+  a: Scope,
+  data: z.infer<typeof c.invoiceSchema>,
+  internal = false,
+) {
+  if (!(await tx.customer.findFirst({ where: { id: data.customerId, archived: false } })))
+    throw missing();
+  const id = randomUUID();
+  let total = 0n;
+  const lines = [];
+  if (data.saleId) {
+    const sale = await tx.sale.findFirst({
+      where: { id: data.saleId, customerId: data.customerId },
     });
-    await tx.invoiceLine.createMany({
-      data: lines.map((l) => ({ id: randomUUID(), ...ownership(a), invoiceId: id, ...l })),
+    if (!sale) throw missing();
+    const payment = await tx.payment.findFirst({
+      where: { saleId: sale.id, direction: 'in', status: 'confirmed' },
     });
-    await audit(tx, a, 'invoice.created', id);
-    return { id };
+    if (!payment) throw conflict('Only a confirmed fully paid sale can be linked.');
+    total = BigInt(sale.total.toString());
+    if (await tx.return.findFirst({ where: { saleId: sale.id } }))
+      throw conflict('A returned sale cannot be linked to a new invoice.');
+    const original = await tx.saleLine.findMany({ where: { saleId: sale.id } });
+    for (const l of original) {
+      if (l.discount.toString() !== '0')
+        throw conflict('Discounted receipts remain the original sale document.');
+      lines.push({
+        productId: l.productId,
+        name: l.name,
+        quantity: Number(l.quantity),
+        unitPrice: l.unitPrice.toString(),
+        total: l.total.toString(),
+        tax: l.tax.toString(),
+      });
+    }
+  } else
+    for (const l of data.lines) {
+      const p = await tx.product.findFirst({ where: { id: l.productId, archived: false } });
+      if (!p || p.isGroup || (p.systemKind && !internal)) throw missing();
+      if (Array.isArray(p.recipe) && p.recipe.length)
+        throw conflict('Recipe menu items must be paid through restaurant orders or POS.');
+      const value = lineAmount(l.unitPrice, l.quantity);
+      total += value;
+      lines.push({
+        ...l,
+        name: p.name,
+        total: value.toString(),
+        tax: includedTax(value.toString(), p.vatBps).toString(),
+        revenueAccount:
+          p.systemKind === 'restaurant_charge'
+            ? '1400 Guest room charges'
+            : p.systemKind
+              ? '4020 Accommodation sales'
+              : '4000 Sales',
+      });
+    }
+  if (total <= 0n || total > 999999999999999n)
+    throw conflict('Invoice total is outside the supported range.');
+  await tx.invoice.create({
+    data: {
+      id,
+      ...ownership(a),
+      customerId: data.customerId,
+      saleId: data.saleId,
+      invoiceDate: data.invoiceDate,
+      dueDate: data.dueDate,
+      notes: data.notes,
+      number: await number(tx, 'INV'),
+      total: total.toString(),
+      paid: data.saleId ? total.toString() : '0',
+      status: data.saleId ? 'issued' : 'draft',
+      actorId: a.userId,
+    },
   });
+  await tx.invoiceLine.createMany({
+    data: lines.map((l) => ({ id: randomUUID(), ...ownership(a), invoiceId: id, ...l })),
+  });
+  await audit(tx, a, 'invoice.created', id);
+  return { id };
 }
 export function issueInvoice(s: Scope, key: string, id: string) {
-  return write(s, 'invoice.issue', 'invoice.issue', key, { id }, async (tx, a) => {
-    await lock(tx, 'invoice', id);
-    const i = await tx.invoice.findFirst({ where: { id } });
-    if (!i) throw missing();
-    if (i.status !== 'draft') throw conflict('Only draft invoices can be issued.');
-    await postingDate(tx, a, i.invoiceDate);
-    const lines = await tx.invoiceLine.findMany({
-      where: { invoiceId: id },
-      orderBy: { productId: 'asc' },
-    });
-    let cost = 0n;
-    for (const l of lines) {
-      const p = await tx.product.findFirst({ where: { id: l.productId, archived: false } });
-      if (!p) throw missing();
-      if (p.type === 'goods') {
-        const value = -(await moveStock(
-          tx,
-          a,
-          p.id,
-          -Number(l.quantity),
-          'invoice',
-          id,
-          'Issued customer invoice',
-        ));
-        cost += value;
-        await tx.invoiceLine.update({ where: { id: l.id }, data: { cost: value.toString() } });
-      }
-    }
-    await postJournal(tx, a, 'invoice', id, [
-      { account: '1300 Accounts receivable', debit: i.total.toString(), credit: '0' },
-      { account: '4000 Sales', debit: '0', credit: i.total.toString() },
-      ...(cost > 0n
-        ? [
-            { account: '5000 Cost of sales', debit: cost.toString(), credit: '0' },
-            { account: '1200 Inventory', debit: '0', credit: cost.toString() },
-          ]
-        : []),
-    ]);
-    await tx.invoice.update({ where: { id }, data: { status: 'issued' } });
-    await audit(tx, a, 'invoice.issued', id);
-    return { id };
+  return write(s, 'invoice.issue', 'invoice.issue', key, { id }, (tx, a) =>
+    issueInvoiceInTransaction(tx, a, id),
+  );
+}
+export async function issueInvoiceInTransaction(tx: Transaction, a: Scope, id: string) {
+  await lock(tx, 'invoice', id);
+  const i = await tx.invoice.findFirst({ where: { id } });
+  if (!i) throw missing();
+  if (i.status !== 'draft') throw conflict('Only draft invoices can be issued.');
+  await postingDate(tx, a, i.invoiceDate);
+  const lines = await tx.invoiceLine.findMany({
+    where: { invoiceId: id },
+    orderBy: { productId: 'asc' },
   });
+  let cost = 0n;
+  for (const l of lines) {
+    const p = await tx.product.findFirst({ where: { id: l.productId, archived: false } });
+    if (!p) throw missing();
+    if (Array.isArray(p.recipe) && p.recipe.length)
+      throw conflict('Recipe menu items must be paid through restaurant orders or POS.');
+    if (p.type === 'goods') {
+      const value = -(await moveStock(
+        tx,
+        a,
+        p.id,
+        -Number(l.quantity),
+        'invoice',
+        id,
+        'Issued customer invoice',
+      ));
+      cost += value;
+      await tx.invoiceLine.update({ where: { id: l.id }, data: { cost: value.toString() } });
+    }
+  }
+  const revenue = new Map<string, bigint>();
+  let tax = 0n;
+  for (const l of lines) {
+    tax += BigInt(l.tax.toString());
+    revenue.set(
+      l.revenueAccount,
+      (revenue.get(l.revenueAccount) ?? 0n) + BigInt(l.total.toString()) - BigInt(l.tax.toString()),
+    );
+  }
+  await postJournal(tx, a, 'invoice', id, [
+    { account: '1300 Accounts receivable', debit: i.total.toString(), credit: '0' },
+    ...[...revenue]
+      .filter(([, v]) => v > 0n)
+      .map(([account, v]) => ({ account, debit: '0', credit: v.toString() })),
+    ...(tax > 0n ? [{ account: '2200 VAT payable', debit: '0', credit: tax.toString() }] : []),
+    ...(cost > 0n
+      ? [
+          { account: '5000 Cost of sales', debit: cost.toString(), credit: '0' },
+          { account: '1200 Inventory', debit: '0', credit: cost.toString() },
+        ]
+      : []),
+  ]);
+  await tx.invoice.update({ where: { id }, data: { status: 'issued' } });
+  await audit(tx, a, 'invoice.issued', id);
+  return { id };
 }
 export function voidInvoice(s: Scope, key: string, id: string) {
   return write(s, 'invoice.issue', 'invoice.void', key, { id }, async (tx, a) => {
@@ -914,6 +982,7 @@ export function finalizeCount(s: Scope, key: string, id: string) {
         id,
         count.notes,
         variance > 0 ? lineAmount(l.unitCost.toString(), variance) : undefined,
+        l.expiresOn ?? undefined,
       );
       if (value !== 0n)
         await postJournal(
@@ -985,9 +1054,9 @@ export async function financialReportInTransaction(
   const productPerformance = await tx.$queryRaw<
     { productId: string; quantity: string; revenue: string; cost: string }[]
   >`SELECT product_id AS "productId",sum(qty)::text AS quantity,sum(revenue)::text AS revenue,sum(cost)::text AS cost FROM (
-    SELECT l.product_id,l.quantity AS qty,l.total AS revenue,l.cost FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE (s.created_at AT TIME ZONE ${b.timezone})::date BETWEEN ${from}::date AND ${to}::date
-    UNION ALL SELECT l.product_id,l.quantity,l.total,l.cost FROM invoice_lines l JOIN invoices i ON i.id=l.invoice_id WHERE i.status='issued' AND i.sale_id IS NULL AND (i.created_at AT TIME ZONE ${b.timezone})::date BETWEEN ${from}::date AND ${to}::date
-    UNION ALL SELECT sl.product_id,-rl.quantity,-rl.total,-rl.cost FROM return_lines rl JOIN returns r ON r.id=rl.return_id JOIN sale_lines sl ON sl.id=rl.sale_line_id WHERE (r.created_at AT TIME ZONE ${b.timezone})::date BETWEEN ${from}::date AND ${to}::date
+    SELECT l.product_id,l.quantity AS qty,(l.total-l.tax) AS revenue,l.cost FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE (s.created_at AT TIME ZONE ${b.timezone})::date BETWEEN ${from}::date AND ${to}::date
+    UNION ALL SELECT l.product_id,l.quantity,l.total-l.tax,l.cost FROM invoice_lines l JOIN invoices i ON i.id=l.invoice_id WHERE i.status='issued' AND i.sale_id IS NULL AND l.revenue_account LIKE '4%' AND (i.created_at AT TIME ZONE ${b.timezone})::date BETWEEN ${from}::date AND ${to}::date
+    UNION ALL SELECT sl.product_id,-rl.quantity,-(rl.total-rl.tax),-rl.cost FROM return_lines rl JOIN returns r ON r.id=rl.return_id JOIN sale_lines sl ON sl.id=rl.sale_line_id WHERE (r.created_at AT TIME ZONE ${b.timezone})::date BETWEEN ${from}::date AND ${to}::date
   ) x GROUP BY product_id`;
   const customerNames = await tx.customer.findMany(),
     supplierNames = await tx.supplier.findMany(),
@@ -1017,6 +1086,9 @@ export async function financialReportInTransaction(
     branchId: a.branchId,
     valuationPending: pending > 0,
     revenue: revenue.toString(),
+    restaurantRevenue: (-net('4010')).toString(),
+    accommodationRevenue: (-net('4020')).toString(),
+    guestDepositsHeld: (-net('2300')).toString(),
     cogs: cogs.toString(),
     grossProfit: (revenue - cogs).toString(),
     stockLoss: stockLoss.toString(),

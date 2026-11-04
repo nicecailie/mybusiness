@@ -55,6 +55,14 @@ export async function scoped<T>(
       requirePermission(member.role, permission);
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.business_id', ${scope.businessId}, true), set_config('app.branch_id', ${scope.branchId}, true)`;
       const moduleByPermission: Partial<Record<Permission, IndustryModule>> = {
+        'restaurant.read': 'restaurant',
+        'restaurant.order': 'restaurant',
+        'restaurant.prepare': 'restaurant',
+        'restaurant.pay': 'restaurant',
+        'hotel.read': 'accommodation',
+        'hotel.book': 'accommodation',
+        'hotel.checkout': 'accommodation',
+        'hotel.clean': 'accommodation',
         'supplier.read': 'purchasing',
         'supplier.create': 'purchasing',
         'supplier.update': 'purchasing',

@@ -396,6 +396,15 @@ export const categoryLabels: Record<IndustryCategory, { en: string; fr: string }
 };
 
 export const implementedModules = new Set<IndustryModule>([
+  'variants',
+  'batches',
+  'expiry_tracking',
+  'tables',
+  'kitchen',
+  'recipes',
+  'reservations',
+  'check_in_out',
+  'housekeeping',
   'purchasing',
   'invoicing',
   'accommodation',
@@ -417,6 +426,10 @@ export function hasEffectiveModule(industryId: string | null, module: IndustryMo
 }
 
 export type WorkspacePage =
+  | 'orders'
+  | 'kitchen'
+  | 'rooms'
+  | 'housekeeping'
   | 'overview'
   | 'sell'
   | 'sales'
@@ -434,6 +447,10 @@ export type WorkspacePage =
 export interface WorkspaceLink {
   page: WorkspacePage;
   label:
+    | 'orders'
+    | 'kitchen'
+    | 'rooms'
+    | 'housekeeping'
     | 'overview'
     | 'newSale'
     | 'todaySales'
@@ -451,6 +468,15 @@ export interface WorkspaceLink {
   expert?: boolean;
 }
 const workspaceLinkDefinitions: readonly WorkspaceLink[] = [
+  { page: 'orders', label: 'orders', module: 'restaurant', permission: 'restaurant.read' },
+  { page: 'kitchen', label: 'kitchen', module: 'restaurant', permission: 'restaurant.prepare' },
+  { page: 'rooms', label: 'rooms', module: 'accommodation', permission: 'hotel.read' },
+  {
+    page: 'housekeeping',
+    label: 'housekeeping',
+    module: 'accommodation',
+    permission: 'hotel.clean',
+  },
   { page: 'overview', label: 'overview' },
   { page: 'sell', label: 'newSale', module: 'sales', permission: 'sale.create' },
   { page: 'sales', label: 'todaySales', module: 'sales', permission: 'sale.read' },
@@ -498,7 +524,10 @@ export function workspaceLinks(
       (!industry?.navigation.includes(link.module) || !hasEffectiveModule(industryId, link.module))
     )
       return false;
-    if (link.page === 'products' && ['cashier', 'purchasing', 'accountant'].includes(role))
+    if (
+      link.page === 'products' &&
+      ['cashier', 'purchasing', 'accountant', 'waiter'].includes(role)
+    )
       return false;
     return true;
   });

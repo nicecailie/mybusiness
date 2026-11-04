@@ -1,4 +1,5 @@
 'use client';
+import { operationsMessages } from '../../../packages/i18n/src/index';
 import { newOperationId } from './idempotency';
 import { webDraftSchema } from '../../../packages/contracts/src/index';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -626,6 +627,11 @@ export function ReceiptModal({
                   </div>
                 ))}
               </div>
+              {r.tax && BigInt(r.tax) > 0n && (
+                <p>
+                  {operationsMessages[locale].tax}: {money(r.tax, locale)}
+                </p>
+              )}
               <div className="receipt-total">
                 <span>{t('total')}</span>
                 <strong>{money(r.total, locale)}</strong>

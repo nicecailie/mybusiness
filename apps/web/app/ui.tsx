@@ -240,7 +240,7 @@ export function useWrite(
   const pending = useRef<Pending | null>(initial),
     op = useRef(initial?.key ?? newOperationId());
   const submit = async (path: string, body: unknown, method = 'POST') => {
-    if (busy) return;
+    if (busy) return false;
     setBusy(true);
     setError('');
     const original = pending.current ?? { path, body, method, key: op.current };
@@ -253,6 +253,7 @@ export function useWrite(
       setUncertain(false);
       op.current = newOperationId();
       onSuccess();
+      return true;
     } catch (e) {
       if (e instanceof RequestError && e.uncertain) {
         setUncertain(true);
@@ -263,6 +264,7 @@ export function useWrite(
         setUncertain(false);
         setError(e instanceof Error ? e.message : 'Request failed');
       }
+      return false;
     } finally {
       setBusy(false);
     }
@@ -307,6 +309,10 @@ export function Brand() {
   );
 }
 export type Page =
+  | 'orders'
+  | 'kitchen'
+  | 'rooms'
+  | 'housekeeping'
   | 'money'
   | 'stock'
   | 'overview'

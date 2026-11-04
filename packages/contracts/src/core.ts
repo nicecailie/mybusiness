@@ -42,7 +42,15 @@ export const purchaseSchema = z
 export const receiptSchema = z
   .object({
     lines: z
-      .array(z.object({ lineId: idSchema, quantity: quantitySchema }).strict())
+      .array(
+        z
+          .object({
+            lineId: idSchema,
+            quantity: quantitySchema,
+            expiresOn: z.string().date().optional(),
+          })
+          .strict(),
+      )
       .min(1)
       .max(100)
       .refine((v) => new Set(v.map((l) => l.lineId)).size === v.length, 'Combine duplicate lines.'),
@@ -119,6 +127,7 @@ export const countSchema = z
         z
           .object({
             productId: idSchema,
+            expiresOn: z.string().date().optional(),
             counted: nonnegativeQuantitySchema,
             unitCost: moneySchema,
           })
@@ -132,7 +141,18 @@ export const countSchema = z
 export const staffUpdateSchema = z
   .object({
     userId: z.string().min(1).max(128),
-    role: z.enum(['manager', 'cashier', 'inventory', 'purchasing', 'accountant', 'viewer']),
+    role: z.enum([
+      'manager',
+      'cashier',
+      'inventory',
+      'purchasing',
+      'accountant',
+      'viewer',
+      'waiter',
+      'kitchen',
+      'receptionist',
+      'housekeeping',
+    ]),
     active: z.boolean(),
   })
   .strict();

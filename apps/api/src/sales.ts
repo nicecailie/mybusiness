@@ -17,6 +17,8 @@ import {
 import { scoped, write, audit, ownership, type Transaction } from './database.js';
 import { postJournal } from './accounting.js';
 import { verifyCatalogProof } from './offline-proof.js';
+import { changeBatches, restoreLots, includedTax } from './stock-lots.js';
+import { z } from 'zod';
 import { lockCash } from './cash.js';
 
 export async function receipt(tx: Transaction, s: Scope, id: string): Promise<Receipt> {
@@ -55,6 +57,7 @@ export async function receipt(tx: Transaction, s: Scope, id: string): Promise<Re
     number: sale.number,
     createdAt: sale.createdAt.toISOString(),
     total: sale.total.toString(),
+    tax: lines.reduce((n, l) => n + BigInt(l.tax.toString()), 0n).toString(),
     tendered: sale.tendered.toString(),
     change: sale.change.toString(),
     customerName: sale.customerName,
@@ -99,6 +102,7 @@ export async function postSale(
   key: string,
   input: SaleInput,
   offline?: OfflineSaleInput,
+  booking?: { roomCharge?: boolean; restaurant?: boolean },
 ): Promise<{ id: string }> {
   let closedRegister = false;
   if (offline) {
@@ -148,54 +152,116 @@ export async function postSale(
           403,
         );
     }
-  } else await lockCash(tx, a, input.cashSessionId);
+  } else if (!booking?.roomCharge) await lockCash(tx, a, input.cashSessionId);
   const customer = input.customerId
     ? await tx.customer.findFirst({
         where: { id: input.customerId, archived: false },
       })
     : null;
   if (input.customerId && !customer) throw new DomainError('NOT_FOUND', 'Customer not found.', 404);
-  // Stable lock order prevents deadlocks between carts containing the same products.
+  // Lock every direct product and captured recipe ingredient in a single stable order.
+  const snapshots = await tx.product.findMany({
+    where: { id: { in: input.lines.map((l) => l.productId) } },
+  });
+  const stockIds = new Set<string>();
+  for (const p of snapshots) {
+    if (p.type === 'goods') stockIds.add(p.id);
+    for (const l of recipeSnapshot.parse(p.recipe)) stockIds.add(l.productId);
+  }
+  for (const productId of [...stockIds].sort())
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'stock:' + a.branchId + ':' + productId},0))`;
   const lines = [];
   for (const item of [...input.lines].sort((x, y) => x.productId.localeCompare(y.productId))) {
-    const p = await tx.product.findFirst({
-      where: { id: item.productId, ...(offline ? {} : { archived: false }) },
-    });
-    if (!p)
+    const p = snapshots.find((p) => p.id === item.productId && (offline || !p.archived));
+    if (!p || p.isGroup || p.systemKind)
       throw new DomainError(
         'PRODUCT_UNAVAILABLE',
         'A product in this cart is no longer available.',
+        409,
+      );
+    if (offline && p.batchTracked)
+      throw new DomainError(
+        'BATCH_ONLINE_REQUIRED',
+        'Products with expiry require online checkout so their current lots can be checked.',
         409,
       );
     let cost = 0n,
       opening = 0,
       shortage = 0;
     const captured = offline?.lines.find((l) => l.productId === p.id);
-    if (p.type === 'goods') {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'stock:' + a.branchId + ':' + p.id},0))`;
-      const b = await tx.stockBalance.findFirst({ where: { productId: p.id } });
-      opening = Number(b?.onHand ?? 0);
-      if (!offline && item.quantity > Math.max(0, opening))
+    const consumption: Consumption[] = [];
+    const recipe = recipeSnapshot.parse(p.recipe);
+    if (recipe.length && p.type === 'goods')
+      throw new DomainError('INVALID_RECIPE', 'A recipe menu item must be a service.');
+    const parts = recipe.length
+      ? recipe.map((x) => ({
+          productId: x.productId,
+          quantity: exactIngredientQuantity(x.quantity, item.quantity),
+        }))
+      : p.type === 'goods'
+        ? [{ productId: p.id, quantity: item.quantity }]
+        : [];
+    for (const part of parts.sort((x, y) => x.productId.localeCompare(y.productId))) {
+      if (
+        part.quantity <= 0 ||
+        Math.abs(part.quantity * 1000 - Math.round(part.quantity * 1000)) > 0.000001
+      )
+        throw new DomainError('INVALID_QUANTITY', 'Ingredient quantity must be at least 0.001.');
+      const ingredient =
+        part.productId === p.id
+          ? p
+          : await tx.product.findFirst({
+              where: { id: part.productId, archived: false, type: 'goods', isGroup: false },
+            });
+      if (!ingredient)
+        throw new DomainError('PRODUCT_UNAVAILABLE', 'A recipe ingredient is unavailable.', 409);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'stock:' + a.branchId + ':' + ingredient.id},0))`;
+      const b = await tx.stockBalance.findFirst({ where: { productId: ingredient.id } });
+      const available = Number(b?.onHand ?? 0);
+      if (
+        (!offline || recipe.length > 0 || ingredient.batchTracked) &&
+        part.quantity > Math.max(0, available)
+      )
         throw new DomainError(
           'INSUFFICIENT_STOCK',
-          `Not enough stock for ${p.name}. Your cart has been preserved.`,
+          `Not enough stock for ${ingredient.name}. Your cart has been preserved.`,
           409,
         );
-      const valuedQuantity = Math.min(item.quantity, Math.max(0, opening));
-      if (valuedQuantity > 0 && b)
-        cost = allocatedCost(b.value.toString(), valuedQuantity, opening);
-      shortage = Number((item.quantity - valuedQuantity).toFixed(3));
+      const valued = Math.min(part.quantity, Math.max(0, available));
+      const value = valued > 0 && b ? allocatedCost(b.value.toString(), valued, available) : 0n;
+      const lots = await changeBatches(
+        tx,
+        a,
+        ingredient,
+        -part.quantity,
+        undefined,
+        false,
+        offline ? new Date(offline.localTime) : new Date(),
+      );
       await tx.stockBalance.upsert({
-        where: { tenantId_businessId_branchId_productId: { ...ownership(a), productId: p.id } },
+        where: {
+          tenantId_businessId_branchId_productId: { ...ownership(a), productId: ingredient.id },
+        },
         create: {
           id: randomUUID(),
           ...ownership(a),
-          productId: p.id,
-          onHand: -item.quantity,
+          productId: ingredient.id,
+          onHand: -part.quantity,
           value: '0',
         },
-        update: { onHand: { decrement: item.quantity }, value: { decrement: cost.toString() } },
+        update: { onHand: { decrement: part.quantity }, value: { decrement: value.toString() } },
       });
+      consumption.push({
+        productId: ingredient.id,
+        quantity: part.quantity,
+        cost: value.toString(),
+        lots,
+      });
+      cost += value;
+      if (ingredient.id === p.id) {
+        opening = available;
+        shortage = Number((part.quantity - valued).toFixed(3));
+      }
     }
     const unitPrice = captured?.unitPrice ?? p.price.toString();
     const discount = captured?.discount ?? '0';
@@ -204,6 +270,11 @@ export async function postSale(
       throw new DomainError('INVALID_OFFLINE_TOTAL', 'Review the recorded line totals.');
     lines.push({
       p,
+      consumption,
+      tax: includedTax(
+        lineTotal,
+        offline && captured ? verifyCatalogProof(a, offline, captured) : p.vatBps,
+      ),
       quantity: item.quantity,
       cost,
       opening,
@@ -216,7 +287,9 @@ export async function postSale(
   }
   const totals = cashTotals(
     lines.map((l) => ({ price: l.lineTotal, quantity: 1 })),
-    input.tendered,
+    booking?.roomCharge
+      ? lines.reduce((n, l) => n + BigInt(l.lineTotal), 0n).toString()
+      : input.tendered,
   );
   if (offline && offline.total !== totals.total)
     throw new DomainError('INVALID_OFFLINE_TOTAL', 'The sale total differs from its lines.');
@@ -237,9 +310,11 @@ export async function postSale(
       actorId: a.userId,
       customerId: customer?.id,
       customerName: customer?.name,
-      cashSessionId: input.cashSessionId,
+      cashSessionId: booking?.roomCharge ? null : input.cashSessionId,
+      settlementKind: booking?.roomCharge ? 'room' : 'paid',
+      revenueAccount: booking?.restaurant ? '4010 Restaurant sales' : '4000 Sales',
       total: totals.total,
-      tendered: input.tendered,
+      tendered: booking?.roomCharge ? '0' : input.tendered,
       change: totals.change,
       cost,
     },
@@ -258,16 +333,18 @@ export async function postSale(
         discount: l.discount,
         total: l.lineTotal,
         cost: l.cost.toString(),
+        consumption: l.consumption,
+        tax: l.tax.toString(),
       },
     });
-    if (l.p.type === 'goods')
+    for (const part of l.consumption)
       await tx.stockMovement.create({
         data: {
           id: randomUUID(),
           ...ownership(a),
-          productId: l.p.id,
-          quantity: -l.quantity,
-          value: (-l.cost).toString(),
+          productId: part.productId,
+          quantity: -part.quantity,
+          value: (-BigInt(part.cost)).toString(),
           sourceType: 'sale',
           sourceId: id,
           reason: offline
@@ -301,24 +378,36 @@ export async function postSale(
       'Late upload changes the expected cash of a closed session.',
     );
   const payment = offline?.payment ?? input.payment ?? { method: 'cash' as const };
-  await tx.payment.create({
-    data: {
-      id: randomUUID(),
-      ...ownership(a),
-      saleId: id,
-      cashSessionId: input.cashSessionId,
-      amount: totals.total,
-      direction: 'in',
-      method: payment.method,
-      provider: payment.provider,
-      reference: payment.reference,
-      status: payment.method === 'cash' ? 'confirmed' : 'recorded_unverified',
-      createdAt: offline ? new Date(offline.localTime) : undefined,
-    },
-  });
+  if (!booking?.roomCharge)
+    await tx.payment.create({
+      data: {
+        id: randomUUID(),
+        ...ownership(a),
+        saleId: id,
+        cashSessionId: input.cashSessionId,
+        amount: totals.total,
+        direction: 'in',
+        method: payment.method,
+        provider: payment.provider,
+        reference: payment.reference,
+        status: payment.method === 'cash' ? 'confirmed' : 'recorded_unverified',
+        createdAt: offline ? new Date(offline.localTime) : undefined,
+      },
+    });
+  const tax = lines.reduce((n, l) => n + l.tax, 0n);
   const postings = salePosting(totals.total, cost);
+  postings[1]!.credit = (BigInt(totals.total) - tax).toString();
+  if (tax > 0n) postings.push({ account: '2200 VAT payable', debit: '0', credit: tax.toString() });
   if (payment.method !== 'cash') postings[0]!.account = '1100 Payments awaiting verification';
-  await postJournal(tx, a, 'sale', id, postings);
+  if (booking?.roomCharge) postings[0]!.account = '1400 Guest room charges';
+  if (booking?.restaurant) postings[1]!.account = '4010 Restaurant sales';
+  await postJournal(
+    tx,
+    a,
+    'sale',
+    id,
+    postings.filter((l) => l.debit !== '0' || l.credit !== '0'),
+  );
   await audit(tx, a, 'sale.completed', id);
   return { id };
 }
@@ -332,12 +421,30 @@ export async function returnSale(
     await lockCash(tx, a, input.cashSessionId);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'return:' + saleId},0))`;
     const originalSale = await tx.sale.findFirst({ where: { id: saleId } });
+    if (originalSale?.settlementKind === 'room')
+      throw new DomainError(
+        'ROOM_CREDIT_REQUIRED',
+        'Room charges need a guest credit review, not a cash refund.',
+        409,
+      );
     if (!originalSale) throw new DomainError('NOT_FOUND', 'Sale not found in this branch.', 404);
+    const originalLines = await tx.saleLine.findMany({
+      where: { saleId, id: { in: input.lines.map((l) => l.saleLineId) } },
+    });
+    const stockIds = new Set<string>();
+    for (const l of originalLines) {
+      const consumed = consumptionSchema.parse(l.consumption);
+      if (consumed.length) for (const p of consumed) stockIds.add(p.productId);
+      else stockIds.add(l.productId);
+    }
+    for (const p of [...stockIds].sort())
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'stock:' + a.branchId + ':' + p},0))`;
     const id = randomUUID();
     let total = 0n,
       cost = 0n,
       restockedCost = 0n,
-      damagedCost = 0n;
+      damagedCost = 0n,
+      tax = 0n;
     const lines = [];
     for (const line of input.lines) {
       const original = await tx.saleLine.findFirst({
@@ -370,58 +477,112 @@ export async function returnSale(
         prior.reduce((n, r) => n + BigInt(r.total.toString()), 0n);
       total += lineTotal;
       cost += allocatedCost;
-      const p = await tx.product.findUniqueOrThrow({
-        where: { id: original.productId },
-      });
-      if (p.type === 'goods' && line.disposition === 'restockable') {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'stock:' + a.branchId + ':' + p.id},0))`;
-        const balance = await tx.stockBalance.findFirst({ where: { productId: p.id } });
-        if (Number(balance?.onHand ?? 0) < 0 && allocatedCost > 0n)
-          throw new DomainError(
-            'SHORTAGE_REVIEW_REQUIRED',
-            'Record a reviewed quantity correction before returning valued goods against a negative balance.',
-            409,
-          );
-        await tx.stockBalance.upsert({
-          where: {
-            tenantId_businessId_branchId_productId: {
-              ...ownership(a),
-              productId: p.id,
+      const lineTax =
+        (BigInt(original.tax.toString()) *
+          quantityUnits(Number((used + line.quantity).toFixed(3)))) /
+          quantityUnits(Number(original.quantity)) -
+        prior.reduce((n, r) => n + BigInt(r.tax.toString()), 0n);
+      tax += lineTax;
+      const p = await tx.product.findUniqueOrThrow({ where: { id: original.productId } });
+      const captured = consumptionSchema.parse(original.consumption);
+      const parts = captured.length
+        ? captured
+        : p.type === 'goods'
+          ? [
+              {
+                productId: p.id,
+                quantity: Number(original.quantity),
+                cost: original.cost.toString(),
+                lots: [],
+              },
+            ]
+          : [];
+      let restored = 0n;
+      if (line.disposition === 'restockable')
+        for (const part of parts) {
+          const originalUnits = quantityUnits(Number(original.quantity)),
+            partUnits = quantityUnits(part.quantity),
+            previous = quantityUnits(used),
+            next = previous + quantityUnits(line.quantity);
+          if (
+            (partUnits * next) % originalUnits !== 0n ||
+            (partUnits * previous) % originalUnits !== 0n
+          )
+            throw new DomainError(
+              'RETURN_PRECISION',
+              'Return a quantity that restores whole thousandths of each captured ingredient.',
+            );
+          const q = Number((partUnits * (next - previous)) / originalUnits) / 1000;
+          const value =
+            (BigInt(part.cost) * next) / originalUnits -
+            (BigInt(part.cost) * previous) / originalUnits;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'stock:' + a.branchId + ':' + part.productId},0))`;
+          const balance = await tx.stockBalance.findFirst({ where: { productId: part.productId } });
+          if (Number(balance?.onHand ?? 0) < 0 && value > 0n)
+            throw new DomainError(
+              'SHORTAGE_REVIEW_REQUIRED',
+              'Review the shortage before restoring valued stock.',
+              409,
+            );
+          await tx.stockBalance.upsert({
+            where: {
+              tenantId_businessId_branchId_productId: {
+                ...ownership(a),
+                productId: part.productId,
+              },
             },
-          },
-          create: {
-            id: randomUUID(),
-            ...ownership(a),
-            productId: p.id,
-            onHand: line.quantity,
-            value: allocatedCost.toString(),
-          },
-          update: {
-            onHand: { increment: line.quantity },
-            value: { increment: allocatedCost.toString() },
-          },
-        });
-        await tx.stockMovement.create({
-          data: {
-            id: randomUUID(),
-            ...ownership(a),
-            productId: p.id,
-            quantity: line.quantity,
-            value: allocatedCost.toString(),
-            sourceType: 'return',
-            sourceId: id,
-            reason: input.reason,
-            actorId: a.userId,
-          },
-        });
-        restockedCost += allocatedCost;
-      } else {
-        damagedCost += allocatedCost;
-      }
+            create: {
+              id: randomUUID(),
+              ...ownership(a),
+              productId: part.productId,
+              onHand: q,
+              value: value.toString(),
+            },
+            update: { onHand: { increment: q }, value: { increment: value.toString() } },
+          });
+          await restoreLots(
+            tx,
+            part.lots,
+            q,
+            Number((partUnits * previous) / originalUnits) / 1000,
+            part.quantity,
+          );
+          await tx.stockMovement.create({
+            data: {
+              id: randomUUID(),
+              ...ownership(a),
+              productId: part.productId,
+              quantity: q,
+              value: value.toString(),
+              sourceType: 'return',
+              sourceId: id,
+              reason: input.reason,
+              actorId: a.userId,
+            },
+          });
+          restored += value;
+        }
+      // Individual component rounding can differ by one BIF from the aggregate. Allocate
+      // refunds from the same captured component totals so inventory and COGS stay exact.
+      const returnCost = parts.length
+        ? parts.reduce(
+            (n, part) =>
+              n +
+              (BigInt(part.cost) * quantityUnits(Number((used + line.quantity).toFixed(3)))) /
+                quantityUnits(Number(original.quantity)) -
+              (BigInt(part.cost) * quantityUnits(used)) / quantityUnits(Number(original.quantity)),
+            0n,
+          )
+        : allocatedCost;
+      cost += returnCost - allocatedCost;
+      if (line.disposition === 'restockable') {
+        restockedCost += restored;
+      } else damagedCost += returnCost;
       lines.push({
         ...line,
         total: lineTotal.toString(),
-        cost: allocatedCost.toString(),
+        cost: returnCost.toString(),
+        tax: lineTax.toString(),
       });
     }
     await tx.return.create({
@@ -461,7 +622,7 @@ export async function returnSale(
       },
     });
     const postings = [
-      { account: '4000 Sales', debit: total.toString(), credit: '0' },
+      { account: originalSale.revenueAccount, debit: (total - tax).toString(), credit: '0' },
       {
         account:
           originalPayment?.method && originalPayment.method !== 'cash'
@@ -471,6 +632,8 @@ export async function returnSale(
         credit: total.toString(),
       },
     ];
+    if (tax > 0n)
+      postings.push({ account: '2200 VAT payable', debit: tax.toString(), credit: '0' });
     if (restockedCost > 0n)
       postings.push({
         account: '1200 Inventory',
@@ -489,7 +652,13 @@ export async function returnSale(
         debit: '0',
         credit: cost.toString(),
       });
-    await postJournal(tx, a, 'return', id, postings);
+    await postJournal(
+      tx,
+      a,
+      'return',
+      id,
+      postings.filter((l) => l.debit !== '0' || l.credit !== '0'),
+    );
     await audit(tx, a, 'sale.returned', id, input.reason);
     return { id, total: total.toString() };
   });
@@ -516,3 +685,26 @@ export const listSales = (s: Scope, search: string, page: number, limit: number)
     for (const row of rows) items.push(await receipt(tx, a, row.id));
     return { items, total };
   });
+
+const recipeSnapshot = z.array(
+  z.object({ productId: z.string().uuid(), quantity: z.number().positive() }),
+);
+const consumptionSchema = z.array(
+  z.object({
+    productId: z.string().uuid(),
+    quantity: z.number().positive(),
+    cost: z.string(),
+    lots: z.array(z.object({ id: z.string().uuid(), quantity: z.number().positive() })),
+  }),
+);
+type Consumption = z.infer<typeof consumptionSchema>[number];
+
+function exactIngredientQuantity(perItem: number, quantity: number) {
+  const units = quantityUnits(perItem) * quantityUnits(quantity);
+  if (units % 1000n !== 0n)
+    throw new DomainError(
+      'RECIPE_PRECISION',
+      'Choose a quantity that uses whole thousandths of each ingredient.',
+    );
+  return Number(units / 1000n) / 1000;
+}

@@ -31,6 +31,14 @@ export function cashTotals(
 }
 export const grants: Record<Role, readonly Permission[]> = {
   owner: [
+    'restaurant.read',
+    'restaurant.order',
+    'restaurant.prepare',
+    'restaurant.pay',
+    'hotel.read',
+    'hotel.book',
+    'hotel.checkout',
+    'hotel.clean',
     'supplier.read',
     'supplier.create',
     'supplier.update',
@@ -64,6 +72,14 @@ export const grants: Record<Role, readonly Permission[]> = {
     'journal.read',
   ],
   manager: [
+    'restaurant.read',
+    'restaurant.order',
+    'restaurant.prepare',
+    'restaurant.pay',
+    'hotel.read',
+    'hotel.book',
+    'hotel.checkout',
+    'hotel.clean',
     'supplier.read',
     'supplier.create',
     'supplier.update',
@@ -97,6 +113,9 @@ export const grants: Record<Role, readonly Permission[]> = {
     'journal.read',
   ],
   cashier: [
+    'restaurant.read',
+    'restaurant.order',
+    'restaurant.pay',
     'catalog.read',
     'sale.create',
     'sale.read',
@@ -141,6 +160,10 @@ export const grants: Record<Role, readonly Permission[]> = {
     'report.read',
     'journal.read',
   ],
+  waiter: ['restaurant.read', 'restaurant.order', 'catalog.read'],
+  kitchen: ['restaurant.prepare'],
+  receptionist: ['hotel.read', 'hotel.book', 'hotel.checkout', 'customer.read', 'customer.write'],
+  housekeeping: ['hotel.clean'],
   viewer: [
     'catalog.read',
     'sale.read',

@@ -14,6 +14,7 @@ import {
   quantityUnits,
 } from '../../../packages/domain/src/index.js';
 import { scoped, write, audit, ownership, type Transaction } from './database.js';
+import { changeBatches } from './stock-lots.js';
 import { postJournal } from './accounting.js';
 
 export async function listProducts(
@@ -28,6 +29,7 @@ export async function listProducts(
     tenantId: s.tenantId,
     businessId: s.businessId,
     archived,
+    systemKind: null,
     OR: [
       { name: { contains: search, mode: 'insensitive' as const } },
       { sku: { contains: search, mode: 'insensitive' as const } },
@@ -50,6 +52,14 @@ export async function listProducts(
       const b = balances.find((b) => b.productId === p.id);
       return {
         id: p.id,
+        parentId: p.parentId,
+        variantLabel: p.variantLabel,
+        isGroup: p.isGroup,
+        batchTracked: p.batchTracked,
+        vatBps: p.vatBps,
+        ...(can(s.role, 'catalog.write')
+          ? { recipe: p.recipe as { productId: string; quantity: number }[] }
+          : {}),
         name: p.name,
         sku: p.sku,
         barcode: p.barcode,
@@ -80,7 +90,9 @@ export async function createProduct(
   input: ProductInput,
 ): Promise<{ id: string }> {
   return write(s, 'catalog.write', 'product.create', key, input, async (tx, a) => {
-    const { cost, initialQuantity, initialReason, ...fields } = input;
+    const { cost, initialQuantity, initialReason, expiresOn, ...fields } = input;
+    if (fields.batchTracked && fields.type !== 'goods')
+      throw new DomainError('INVALID_STOCK', 'Only goods can track batch expiry.');
     const id = randomUUID();
     await tx.product.create({
       data: {
@@ -105,6 +117,7 @@ export async function createProduct(
           unitCost: cost,
           reason: initialReason || 'Initial product quantity',
           direction: 'increase',
+          expiresOn,
         },
         true,
       );
@@ -158,6 +171,7 @@ export async function adjustStock(
   const quantity = decrease ? -input.quantity : input.quantity,
     value = decrease ? -cost : cost,
     id = randomUUID();
+  await changeBatches(tx, a, p, quantity, input.expiresOn, true);
   if (b)
     await tx.stockBalance.update({
       where: { id: b.id },
@@ -212,13 +226,24 @@ export async function updateProduct(
   input: ProductInput,
 ): Promise<{ id: string }> {
   return write(s, 'catalog.write', 'product.update', key, { id, ...input }, async (tx, a) => {
-    const { cost: _cost, initialQuantity: _quantity, initialReason: _reason, ...fields } = input;
+    const {
+      cost: _cost,
+      initialQuantity: _quantity,
+      initialReason: _reason,
+      expiresOn: _expiry,
+      ...fields
+    } = input;
     const original = await tx.product.findFirst({ where: { id } });
     if (!original) throw new DomainError('NOT_FOUND', 'Product not found.', 404);
     if (original.type !== fields.type)
       throw new DomainError(
         'INVALID_TYPE',
         'The stock tracking type cannot change after creation.',
+      );
+    if (fields.batchTracked !== undefined && fields.batchTracked !== original.batchTracked)
+      throw new DomainError(
+        'TRACKING_IMMUTABLE',
+        'Batch tracking is chosen when the product is created.',
       );
     await tx.product.update({
       where: { id },

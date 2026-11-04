@@ -7,7 +7,11 @@ import {
   industryById,
   type WorkspacePage,
 } from '../../../packages/domain/src/industries';
-import { workspaceMessages, type Locale } from '../../../packages/i18n/src/index';
+import {
+  workspaceMessages,
+  operationsMessages,
+  type Locale,
+} from '../../../packages/i18n/src/index';
 import { State, request } from './ui';
 export function IndustryHome({
   context,
@@ -59,6 +63,20 @@ export function IndustryHome({
           : context.role === 'accountant'
             ? t.accountantHome
             : t.ownerHome;
+  const expiry = useQuery({
+    queryKey: ['data', context.tenantId, context.businessId, context.branchId, 'expiry-home'],
+    queryFn: () =>
+      request<{
+        items: {
+          id: string;
+          name: string;
+          expiresOn: string;
+          quantity: number;
+          status: 'expired' | 'expiring';
+        }[];
+      }>('v1/stock/expiry', context),
+    enabled: can(context.role, 'stock.receive'),
+  });
   return (
     <section className="panel core-panel">
       <h1>{title}</h1>
@@ -85,7 +103,9 @@ export function IndustryHome({
         <State loading={data.isPending} error={data.error} retry={() => void data.refetch()} />
       ) : data.data.metrics ? (
         <div className="workspace-cards">
-          {(['sales', 'profitAfterCosts', 'customersOwe', 'suppliersOwed'] as const).map((key) => (
+          {(
+            ['sales', 'profitAfterCosts', 'stockValue', 'customersOwe', 'suppliersOwed'] as const
+          ).map((key) => (
             <button className="panel money-card" key={key} onClick={() => navigate('money')}>
               <span>{t[key]}</span>
               <strong>
@@ -125,6 +145,16 @@ export function IndustryHome({
             </div>
           ))}
         </>
+      )}
+      {!!expiry.data?.items.length && (
+        <section>
+          <h2>{operationsMessages[locale].batches}</h2>
+          {expiry.data.items.map((l) => (
+            <button className="button secondary" key={l.id} onClick={() => navigate('stock')}>
+              {operationsMessages[locale][l.status]} · {l.name} · {l.quantity} · {l.expiresOn}
+            </button>
+          ))}
+        </section>
       )}
     </section>
   );

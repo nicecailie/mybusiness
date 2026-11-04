@@ -1,3 +1,4 @@
+import { seedHospitality } from './seed-hospitality.js';
 import { betterAuth } from 'better-auth';
 import { twoFactor } from 'better-auth/plugins';
 import 'dotenv/config';
@@ -28,6 +29,13 @@ const profiles = [
   { name: 'Diane Niyonkuru', email: 'stock@example.test' },
   { name: 'Claude Habimana', email: 'accountant@example.test' },
   { name: 'Bella Nkurunziza', email: 'second-owner@example.test' },
+  { name: 'Restaurant owner', email: 'restaurant-owner@example.test' },
+  { name: 'Hotel owner', email: 'hotel-owner@example.test' },
+  { name: 'Waiter', email: 'waiter@example.test' },
+  { name: 'Kitchen', email: 'kitchen@example.test' },
+  { name: 'Reception', email: 'receptionist@example.test' },
+  { name: 'Housekeeping', email: 'housekeeping@example.test' },
+  { name: 'Restaurant cashier', email: 'restaurant-cashier@example.test' },
 ];
 const users: string[] = [];
 for (const profile of profiles) {
@@ -214,8 +222,9 @@ await receiveStock(secondScope, 'seed-secondary-stock-0001', {
   unitCost: '2000',
   reason: 'Fictional opening stock',
 });
+await seedHospitality(admin, users);
 console.log(
-  `Demo seed ready: ${catalog.length} products, 21 linked sales, 2 tenants, 3 branches, 4 operational roles. Login uses DEMO_OWNER_EMAIL and DEMO_PASSWORD from the ignored .env.`,
+  `Demo seed ready: ${catalog.length} products, 21 linked sales, 4 tenants, 5 branches, retail and hospitality worker roles. Login uses DEMO_OWNER_EMAIL and DEMO_PASSWORD from the ignored .env.`,
 );
 await admin.end();
 await db.$disconnect();

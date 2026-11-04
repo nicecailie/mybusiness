@@ -9,6 +9,7 @@ for (const file of [
   'mfa-http.test.ts',
   'review-http.test.ts',
   'core-http.test.ts',
+  'hospitality-http.test.ts',
 ]) {
   console.log(`Waiting for the authentication rate window before ${file}.`);
   await setTimeout(11000);
